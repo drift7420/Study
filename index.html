@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="theme-color" content="#16243B">
+<title>Study Apps</title>
+<style>
+  :root{ --paper:#F5F4EF; --ink:#16243B; --red:#C8322B; --green:#2A7F62; --line:#d8d6cf; --mut:#7c8290; --faint:#a8adb8; }
+  *{ box-sizing:border-box; margin:0; }
+  body{ background:var(--paper); color:var(--ink); font-family:ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif; -webkit-tap-highlight-color:transparent; }
+  .wrap{ max-width:560px; margin:0 auto; padding:40px 18px 60px; }
+  .eyebrow{ font-size:11px; letter-spacing:.22em; text-transform:uppercase; color:var(--mut); }
+  h1{ font-family:Georgia,serif; font-size:32px; font-weight:700; margin-top:4px; line-height:1.15; }
+  .lede{ font-size:14px; color:var(--mut); margin-top:8px; line-height:1.5; }
+  .cards{ display:flex; flex-direction:column; gap:14px; margin-top:28px; }
+  a.card{ display:flex; align-items:center; gap:16px; background:#fff; border:1px solid #e4e2da; border-radius:18px; padding:18px 18px; text-decoration:none; color:var(--ink); transition:transform .06s, box-shadow .15s; }
+  a.card:active{ transform:scale(.99); }
+  a.card:hover{ box-shadow:0 6px 22px rgba(22,36,59,.08); }
+  .ic{ width:52px; height:52px; flex:none; border-radius:14px; display:flex; align-items:center; justify-content:center; font-size:26px; }
+  .ic.flags{ background:#FBE9E7; }
+  .ic.jp{ background:#E6EFEA; font-family:"Hiragino Sans","Yu Gothic","Noto Sans JP",sans-serif; font-weight:700; color:var(--green); }
+  .ic.num{ background:#EEF1F6; font-weight:800; color:var(--ink); font-variant-numeric:tabular-nums; }
+  .meta{ flex:1; }
+  .nm{ font-size:18px; font-weight:700; }
+  .dd{ font-size:13px; color:var(--mut); margin-top:3px; line-height:1.45; }
+  .arrow{ color:var(--faint); font-size:20px; }
+  .foot{ margin-top:34px; font-size:12px; color:var(--faint); line-height:1.6; }
+  .tip{ margin-top:14px; font-size:12.5px; color:var(--mut); background:#fff; border:1px solid #e4e2da; border-radius:12px; padding:12px 14px; line-height:1.5; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="eyebrow">Practice anywhere</div>
+  <h1>Study Apps</h1>
+  <p class="lede">A little hub for daily drills. Works on your laptop or phone — tap one to start.</p>
+
+  <div class="cards">
+    <a class="card" href="flag-quest.html">
+      <span class="ic flags">🌍</span>
+      <span class="meta">
+        <span class="nm">Flag Quest</span>
+        <span class="dd">Memorize all 197 world flags with spaced repetition.</span>
+      </span>
+      <span class="arrow">→</span>
+    </a>
+
+    <a class="card" href="nihongo-quest.html">
+      <span class="ic jp">あ</span>
+      <span class="meta">
+        <span class="nm">Nihongo Quest</span>
+        <span class="dd">Japanese: kana, vocab, grammar, listening, speaking & your own words.</span>
+      </span>
+      <span class="arrow">→</span>
+    </a>
+
+    <a class="card" href="major-system.html">
+      <span class="ic num">37</span>
+      <span class="meta">
+        <span class="nm">Major System Trainer</span>
+        <span class="dd">Memorize numbers by turning digits into words and images.</span>
+      </span>
+      <span class="arrow">→</span>
+    </a>
+  </div>
+
+  <div class="tip">
+    📱 <strong>On your phone:</strong> open this page in your browser, then use “Add to Home Screen” (Share menu on iPhone, ⋮ menu on Android) to get an app-style icon.
+  </div>
+
+  <div class="foot">
+    Each app saves your progress in the browser you’re using, so your phone and laptop keep separate progress.
+  </div>
+</div>
+</body>
+</html>

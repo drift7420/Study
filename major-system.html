@@ -73,6 +73,7 @@
   .btn+.btn{margin-top:8px}
   .btn-row{display:flex;gap:8px}
   .btn-row .btn{margin-top:0}
+  .codebox{width:100%;height:84px;margin:10px 0;padding:10px 12px;border-radius:10px;border:1px solid var(--line);background:#FBFCFA;color:var(--ink);font-family:var(--mono);font-size:12px;line-height:1.4;resize:vertical;outline:none;word-break:break-all;box-sizing:border-box}
   .reveal{margin-top:14px;border-top:1px dashed var(--line);padding-top:12px}
   .chunk{
     display:flex;align-items:baseline;gap:10px;padding:7px 4px;
@@ -154,6 +155,7 @@
   <button id="tab-decode" onclick="setTab('decode')"><span class="ico">&#128260;</span>Decode</button>
   <button id="tab-numbers" onclick="setTab('numbers')"><span class="ico">&#128274;</span>My Numbers</button>
   <button id="tab-learn" onclick="setTab('learn')"><span class="ico">&#128214;</span>Sounds</button>
+  <button id="tab-backup" onclick="setTab('backup')"><span class="ico">&#128230;</span>Backup</button>
 </nav>
 
 <script>
@@ -231,10 +233,20 @@ let state = { numbers: [], stats: { day:"", reps:0, streak:0, lastStreakDay:"" }
 const KEY = "major-system-data";
 function today(){ return new Date().toISOString().slice(0,10); }
 
+/* storage: claude.ai (window.storage) → browser localStorage → memory */
+const mem = {};
+const store = {
+  async get(k){ try{ if(window.storage){ const r=await window.storage.get(k); return r?r.value:null; } }catch(e){} try{ return localStorage.getItem(k); }catch(e){} return mem[k]??null; },
+  async set(k,v){ try{ if(window.storage){ await window.storage.set(k,v); return; } }catch(e){} try{ localStorage.setItem(k,v); return; }catch(e){} mem[k]=v; },
+};
+/* backup codes — unicode-safe base64 */
+function encodeBackup(raw){ try{ return btoa(unescape(encodeURIComponent(raw))); }catch(e){ return ""; } }
+function decodeBackup(code){ return decodeURIComponent(escape(atob((code||"").trim()))); }
+
 async function loadState(){
   try{
-    const r = await window.storage.get(KEY);
-    if (r && r.value) state = JSON.parse(r.value);
+    const r = await store.get(KEY);
+    if (r) state = JSON.parse(r);
   }catch(e){ /* first run — nothing saved yet */ }
   if (!state.stats) state.stats = { day:"", reps:0, streak:0, lastStreakDay:"" };
   if (state.stats.day !== today()){ state.stats.day = today(); state.stats.reps = 0; }
@@ -246,7 +258,7 @@ async function loadState(){
   });
 }
 async function saveState(){
-  try{ await window.storage.set(KEY, JSON.stringify(state)); }
+  try{ await store.set(KEY, JSON.stringify(state)); }
   catch(e){ console.error("Save failed", e); }
 }
 function bumpRep(){
@@ -733,14 +745,61 @@ function renderLearn(){
 
 /* ---------- Render ---------- */
 function esc(s){ return s.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;"); }
+/* ---------- Backup tab ---------- */
+function renderBackup(){
+  const n = (state.numbers||[]).length;
+  return `<div class="card">
+    <h2 style="margin:0 0 4px;font-size:17px">Backup &amp; devices</h2>
+    <p class="hint" style="margin-bottom:14px">Your saved numbers live only in this browser (${n} saved). Use this to move them to another device — or from a downloaded file to the hosted version.</p>
+    <p class="hint" style="font-weight:700;color:var(--ink);margin-bottom:6px">1 · Export from here</p>
+    <button class="btn btn-primary" onclick="doExport()">Generate my code</button>
+    <textarea id="export-box" readonly class="codebox" style="display:none" onclick="this.select()"></textarea>
+    <button id="copy-btn" class="btn btn-ghost" style="display:none" onclick="doCopy()">Copy code</button>
+  </div>
+  <div class="card">
+    <p class="hint" style="font-weight:700;color:var(--ink);margin-bottom:6px">2 · Import on the other device</p>
+    <p class="hint" style="margin-bottom:8px">Paste a code, then load it. This replaces whatever is saved here now.</p>
+    <textarea id="import-box" class="codebox" placeholder="Paste your code here…"></textarea>
+    <button class="btn btn-primary" onclick="doImport()">Load this code</button>
+    <p id="backup-status" class="hint" style="margin-top:10px"></p>
+  </div>`;
+}
+function doExport(){
+  const code = encodeBackup(JSON.stringify(state));
+  const ta = document.getElementById('export-box');
+  const cb = document.getElementById('copy-btn');
+  if (ta){ ta.value = code; ta.style.display='block'; ta.focus(); ta.select(); }
+  if (cb){ cb.style.display='block'; cb.textContent='Copy code'; }
+}
+function doCopy(){
+  const ta = document.getElementById('export-box'); if (!ta) return;
+  try{ navigator.clipboard.writeText(ta.value); }catch(e){ ta.select(); try{ document.execCommand('copy'); }catch(_){} }
+  const cb = document.getElementById('copy-btn'); if (cb) cb.textContent='Copied ✓';
+}
+async function doImport(){
+  const box = document.getElementById('import-box');
+  const status = document.getElementById('backup-status');
+  try{
+    const data = JSON.parse(decodeBackup(box ? box.value : ""));
+    if (!data || typeof data !== "object" || !Array.isArray(data.numbers)) throw new Error("bad");
+    state = data;
+    await saveState();
+    if (status) status.textContent = "Imported! Reloading…";
+    setTimeout(()=>{ try{ location.reload(); }catch(e){ window.location.href = window.location.href; } }, 600);
+  }catch(e){
+    if (status) status.textContent = "That code didn't work — make sure you pasted the whole thing.";
+  }
+}
+
 function render(){
-  ["practice","decode","numbers","learn"].forEach(t =>
+  ["practice","decode","numbers","learn","backup"].forEach(t =>
     document.getElementById("tab-"+t).classList.toggle("active", tab===t));
   const main = document.getElementById("main");
   if (tab === "practice") main.innerHTML = renderPractice();
   if (tab === "decode") main.innerHTML = renderDecode();
   if (tab === "numbers") main.innerHTML = renderNumbers();
   if (tab === "learn") main.innerHTML = renderLearn();
+  if (tab === "backup") main.innerHTML = renderBackup();
 }
 
 (async function init(){

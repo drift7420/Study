@@ -49,14 +49,26 @@ LABEL_SERVICE = """
                            ?item rdfs:label ?name ; schema:description ?desc . }
 """
 
-# Everything before 1 CE in one chunk: few enough that it stays cheap, and it
-# avoids negative xsd:dateTime literals, which Blazegraph handles poorly.
-PERSON_BCE = """
+# Every query is driven by a range comparison on a truthy date property, never
+# by YEAR(): a function call cannot use the date index, so YEAR(?d) < 1 scans
+# every date in Wikidata and times the query out. A bare upper bound covers
+# everything BCE without needing negative date literals, which Blazegraph
+# handles unevenly.
+DATE_WINDOWS = {"person": 50, "polity": 100, "event": 100}
+LAST_YEAR = {"person": 1900, "polity": 1900, "event": 1950}
+
+# (property, whether to run it across all windows or only the BCE chunk)
+DRIVERS = {
+    "person": [("P569", True), ("P570", True), ("P1317", False)],
+    "polity": [("P571", True)],
+    "event": [("P585", True), ("P580", True)],
+}
+
+PERSON_QUERY = """
 SELECT ?item ?name ?desc ?sitelinks ?birth ?birthPrec ?death ?deathPrec ?floruit ?floruitPrec ?article
 WHERE {
-  { ?item wdt:P569 ?dob . FILTER(YEAR(?dob) < 1) }
-  UNION
-  { ?item wdt:P570 ?dod . FILTER(YEAR(?dod) < 1) }
+  ?item wdt:%DRIVER% ?driver .
+  %DATEFILTER%
   ?item wdt:P31 wd:Q5 ; wikibase:sitelinks ?sitelinks .
   FILTER(?sitelinks >= %MIN%)
   OPTIONAL { ?item p:P569/psv:P569 ?bn .
@@ -70,32 +82,18 @@ WHERE {
 }
 """
 
-PERSON_WINDOW = """
-SELECT ?item ?name ?desc ?sitelinks ?birth ?birthPrec ?death ?deathPrec ?article
-WHERE {
-  ?item wdt:P569 ?dob .
-  FILTER(?dob >= "%FROM%-01-01T00:00:00Z"^^xsd:dateTime &&
-         ?dob <  "%TO%-01-01T00:00:00Z"^^xsd:dateTime)
-  ?item wdt:P31 wd:Q5 ; wikibase:sitelinks ?sitelinks .
-  FILTER(?sitelinks >= %MIN%)
-  OPTIONAL { ?item p:P569/psv:P569 ?bn .
-             ?bn wikibase:timeValue ?birth ; wikibase:timePrecision ?birthPrec . }
-  OPTIONAL { ?item p:P570/psv:P570 ?dn .
-             ?dn wikibase:timeValue ?death ; wikibase:timePrecision ?deathPrec . }
-  OPTIONAL { ?article schema:about ?item ; schema:isPartOf <https://en.wikipedia.org/> . }
-%LABEL%
-}
-"""
-
 POLITY_QUERY = """
 SELECT ?item ?name ?desc ?sitelinks ?inception ?inceptionPrec ?dissolved ?dissolvedPrec ?article
 WHERE {
-  ?item p:P571/psv:P571 ?in .
-  ?in wikibase:timeValue ?inception ; wikibase:timePrecision ?inceptionPrec .
-  ?item wdt:P31/wdt:P279* ?class ; wikibase:sitelinks ?sitelinks .
+  ?item wdt:%DRIVER% ?driver .
+  %DATEFILTER%
+  ?item wikibase:sitelinks ?sitelinks .
+  FILTER(?sitelinks >= %MIN%)
+  ?item wdt:P31/wdt:P279* ?class .
   VALUES ?class { wd:Q3624078 wd:Q3024240 wd:Q417175 wd:Q48349 wd:Q164950
                   wd:Q133156 wd:Q1250464 wd:Q28171280 }
-  FILTER(?sitelinks >= %MIN%)
+  OPTIONAL { ?item p:P571/psv:P571 ?in .
+             ?in wikibase:timeValue ?inception ; wikibase:timePrecision ?inceptionPrec . }
   OPTIONAL { ?item p:P576/psv:P576 ?dn .
              ?dn wikibase:timeValue ?dissolved ; wikibase:timePrecision ?dissolvedPrec . }
   OPTIONAL { ?article schema:about ?item ; schema:isPartOf <https://en.wikipedia.org/> . }
@@ -106,12 +104,12 @@ WHERE {
 EVENT_QUERY = """
 SELECT ?item ?name ?desc ?sitelinks ?point ?pointPrec ?start ?startPrec ?end ?endPrec ?article
 WHERE {
-  ?item wdt:P31/wdt:P279* ?class ; wikibase:sitelinks ?sitelinks .
-  VALUES ?class { wd:Q1190554 wd:Q178561 wd:Q198 wd:Q13418847 }
+  ?item wdt:%DRIVER% ?driver .
+  %DATEFILTER%
+  ?item wikibase:sitelinks ?sitelinks .
   FILTER(?sitelinks >= %MIN%)
-  { ?item wdt:P585 ?anyPoint . FILTER(YEAR(?anyPoint) < 1950) }
-  UNION
-  { ?item wdt:P580 ?anyStart . FILTER(YEAR(?anyStart) < 1950) }
+  ?item wdt:P31/wdt:P279* ?class .
+  VALUES ?class { wd:Q1190554 wd:Q178561 wd:Q198 wd:Q13418847 }
   OPTIONAL { ?item p:P585/psv:P585 ?pn .
              ?pn wikibase:timeValue ?point ; wikibase:timePrecision ?pointPrec . }
   OPTIONAL { ?item p:P580/psv:P580 ?sn .
@@ -122,6 +120,8 @@ WHERE {
 %LABEL%
 }
 """
+
+TEMPLATES = {"person": PERSON_QUERY, "polity": POLITY_QUERY, "event": EVENT_QUERY}
 
 # Second pass: coordinates only, keyed by QID. Each type reaches its location
 # by a different property.
@@ -163,30 +163,42 @@ FIELD_MAP = {
 }
 
 
-def person_windows(start=1, end=1900, width=50):
-    """Birth-year windows, plus a single chunk for everything BCE."""
-    chunks = [("bce", None, None)]
+def date_windows(end, width, start=1):
+    """(label, from, to) windows. The first has no lower bound, which covers
+    everything BCE with a plain upper-bound comparison."""
+    windows = [("bce", None, start)]
     for lo in range(start, end, width):
-        chunks.append((f"{lo}-{min(lo + width, end)}", lo, min(lo + width, end)))
-    return chunks
+        hi = min(lo + width, end)
+        windows.append((f"{lo}-{hi}", lo, hi))
+    return windows
+
+
+def date_filter(low, high):
+    bounds = []
+    if low is not None:
+        bounds.append(f'?driver >= "{low:04d}-01-01T00:00:00Z"^^xsd:dateTime')
+    bounds.append(f'?driver < "{high:04d}-01-01T00:00:00Z"^^xsd:dateTime')
+    return "FILTER(" + " && ".join(bounds) + ")"
 
 
 def chunks_for(type_):
-    minimum = MIN_SITELINKS[type_]
-    if type_ != "person":
-        query = (POLITY_QUERY if type_ == "polity" else EVENT_QUERY)
-        return [(type_, query.replace("%MIN%", str(minimum)).replace("%LABEL%", LABEL_SERVICE))]
+    """One query per (driver property, date window). Each is small enough to
+    finish; the whole set is deduplicated by QID in transform."""
+    template = TEMPLATES[type_]
+    minimum = str(MIN_SITELINKS[type_])
+    windows = date_windows(LAST_YEAR[type_], DATE_WINDOWS[type_])
 
     out = []
-    for label, lo, hi in person_windows():
-        if lo is None:
-            sparql = PERSON_BCE.replace("%MIN%", str(minimum))
-        else:
-            sparql = (PERSON_WINDOW
-                      .replace("%FROM%", f"{lo:04d}")
-                      .replace("%TO%", f"{hi:04d}")
-                      .replace("%MIN%", str(minimum)))
-        out.append((f"person-{label}", sparql.replace("%LABEL%", LABEL_SERVICE)))
+    for driver, every_window in DRIVERS[type_]:
+        for label, low, high in windows:
+            if not every_window and label != "bce":
+                continue
+            sparql = (template
+                      .replace("%DRIVER%", driver)
+                      .replace("%DATEFILTER%", date_filter(low, high))
+                      .replace("%MIN%", minimum)
+                      .replace("%LABEL%", LABEL_SERVICE))
+            out.append((f"{type_}-{driver}-{label}", sparql))
     return out
 
 
@@ -280,22 +292,36 @@ def fetch_coordinates(qids, type_, contact, cache_dir):
 
 def extract(type_, cache_dir, contact):
     cache_dir.mkdir(parents=True, exist_ok=True)
-    records = []
+    records, failed = [], []
+    chunks = chunks_for(type_)
 
-    for label, sparql in chunks_for(type_):
+    for index, (label, sparql) in enumerate(chunks, start=1):
         cached = cache_dir / f"{label}.json"
         if cached.exists():
-            print(f"  {label}: cached")
             records.extend(json.loads(cached.read_text()))
             continue
 
-        print(f"  {label}: querying…")
-        payload = run_query(sparql, contact)
+        print(f"  [{index}/{len(chunks)}] {label}: querying…")
+        try:
+            payload = run_query(sparql, contact)
+        except Exception as exc:                       # noqa: BLE001
+            # One stubborn window shouldn't cost the whole run; everything that
+            # succeeded is already cached, so a re-run only retries the rest.
+            print(f"  [{index}/{len(chunks)}] {label}: FAILED ({exc})")
+            failed.append(label)
+            continue
+
         rows = [flatten(b, type_) for b in payload["results"]["bindings"]]
         cached.write_text(json.dumps(rows))
-        print(f"  {label}: {len(rows)} rows")
+        print(f"  [{index}/{len(chunks)}] {label}: {len(rows)} rows")
         records.extend(rows)
         time.sleep(2)          # be a good citizen on a shared public endpoint
+
+    if failed:
+        print(f"\n  {len(failed)} chunk(s) failed and were skipped:")
+        for label in failed:
+            print(f"    {label}")
+        print("  Re-run to retry only these; everything else is cached.\n")
 
     print(f"  looking up coordinates for {len(records)} records…")
     coordinates = fetch_coordinates({r["qid"] for r in records if r["qid"]},

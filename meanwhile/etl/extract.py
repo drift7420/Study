@@ -8,14 +8,18 @@ chunk times out, split it further rather than retrying it unchanged.
 Results are cached per chunk under --cache, so a re-run only fetches what is
 missing and an interrupted run resumes where it stopped.
 
+WDQS blocks anonymous clients, so every run needs a contact address. Pass it
+with --contact, or set MEANWHILE_CONTACT once in your shell.
+
 Usage:
-    python extract.py --type person --out raw/person.json
-    python extract.py --type polity --out raw/polity.json
-    python extract.py --type event  --out raw/event.json
+    python extract.py --type person --out raw/person.json --contact you@example.com
+    python extract.py --type polity --out raw/polity.json --contact you@example.com
+    python extract.py --type event  --out raw/event.json  --contact you@example.com
 """
 
 import argparse
 import json
+import os
 import time
 import urllib.parse
 import urllib.request
@@ -23,8 +27,7 @@ from pathlib import Path
 
 ENDPOINT = "https://query.wikidata.org/sparql"
 
-# WDQS blocks anonymous clients; put a real contact address here before running.
-USER_AGENT = "MeanwhileETL/0.1 (https://github.com/drift7420/study; contact: you@example.com)"
+USER_AGENT = "MeanwhileETL/0.1 (https://github.com/drift7420/Study; contact: {contact})"
 
 # Sitelink buckets keep each query bounded without any date arithmetic, which
 # Blazegraph handles poorly for BCE years. Widen the floor to trade size for
@@ -122,10 +125,11 @@ def bucket_filter(low, high):
     return clause + ")"
 
 
-def run_query(sparql, retries=4):
+def run_query(sparql, contact, retries=4):
     url = ENDPOINT + "?" + urllib.parse.urlencode({"query": sparql, "format": "json"})
     request = urllib.request.Request(url, headers={
-        "User-Agent": USER_AGENT, "Accept": "application/sparql-results+json"})
+        "User-Agent": USER_AGENT.format(contact=contact),
+        "Accept": "application/sparql-results+json"})
     delay = 5
     for attempt in range(retries):
         try:
@@ -169,7 +173,7 @@ def flatten(binding, type_):
     return record
 
 
-def extract(type_, cache_dir, buckets=BUCKETS):
+def extract(type_, cache_dir, contact, buckets=BUCKETS):
     cache_dir.mkdir(parents=True, exist_ok=True)
     records = []
     for low, high in buckets:
@@ -182,7 +186,7 @@ def extract(type_, cache_dir, buckets=BUCKETS):
 
         print(f"  {label}: querying…")
         sparql = QUERIES[type_].replace("%BUCKET%", bucket_filter(low, high))
-        payload = run_query(sparql)
+        payload = run_query(sparql, contact)
         rows = [flatten(b, type_) for b in payload["results"]["bindings"]]
         cached.write_text(json.dumps(rows))
         print(f"  {label}: {len(rows)} rows")
@@ -197,9 +201,16 @@ def main():
     parser.add_argument("--type", required=True, choices=sorted(QUERIES))
     parser.add_argument("--out", required=True)
     parser.add_argument("--cache", default="raw/cache")
+    parser.add_argument("--contact", default=os.environ.get("MEANWHILE_CONTACT"),
+                        help="Contact address for the User-Agent header, which Wikidata "
+                             "requires. Defaults to the MEANWHILE_CONTACT env var.")
     args = parser.parse_args()
 
-    records = extract(args.type, Path(args.cache))
+    if not args.contact:
+        parser.error("Wikidata rejects anonymous queries. Pass --contact your@email.com, "
+                     "or set the MEANWHILE_CONTACT environment variable.")
+
+    records = extract(args.type, Path(args.cache), args.contact)
     out = Path(args.out)
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(json.dumps(records))

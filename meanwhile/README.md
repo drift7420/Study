@@ -17,14 +17,19 @@ the design survives real data.
 
 ## Running it
 
+Python 3.10 or newer. The pipeline itself needs no third-party packages;
+`pytest` is only for the tests.
+
+Wikidata rejects anonymous queries, so pass a contact address with
+`--contact` (or set `MEANWHILE_CONTACT` once in your shell).
+
 ```bash
 cd etl
-pip install pytest          # only needed for the tests
 
-# 1. pull raw records (needs network; put a contact address in USER_AGENT first)
-python extract.py --type person --out raw/person.json
-python extract.py --type polity --out raw/polity.json
-python extract.py --type event  --out raw/event.json
+# 1. pull raw records — the only stage that needs network
+python extract.py --type person --out raw/person.json --contact you@example.com
+python extract.py --type polity --out raw/polity.json --contact you@example.com
+python extract.py --type event  --out raw/event.json  --contact you@example.com
 
 # 2 + 3. normalise, build the database, print the coverage report
 python build_db.py --raw raw --out dist/meanwhile.db
@@ -57,8 +62,8 @@ it on first use:
 - **Timeouts.** WDQS cuts queries off at 60 seconds. `BUCKETS` splits the work
   by sitelink count; if a bucket times out, split it further rather than
   retrying it unchanged.
-- **User agent.** WDQS blocks anonymous clients. Put a real contact address in
-  `USER_AGENT` before running.
+- **User agent.** WDQS blocks anonymous clients, which is why `--contact` is
+  required.
 - **Class lists.** The `VALUES ?class { … }` sets in the polity and event
   queries are a first guess at how Wikidata types states and occurrences, which
   it does inconsistently. Check what comes back and adjust.

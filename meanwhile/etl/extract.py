@@ -1,25 +1,33 @@
 """Stage 1: pull raw records from the Wikidata Query Service.
 
 This is the only stage that needs network, and the only one not covered by
-tests — it could not be run in the environment it was written in. What it
-does know is what WDQS rejected, and why:
+tests — it could not be run in the environment it was written in.
 
-*Two passes, not one.* The first pass asks only "which items are in this
-window" — identity, label, sitelinks. Dates with their precision, and
-coordinates, come from a second pass keyed by the QIDs already found. Asked
-inline, each of those is a two-hop join off a multi-million-row scan; asked
-against a VALUES list of 400 known items, both are bounded and quick.
+Four things, each learned from a way WDQS refused the work:
+
+*Lead with the selective pattern.* Starting from `?item wdt:P31 wd:Q5` scans
+every human in Wikidata before any filter narrows it, and the optimiser does
+not reliably push a sitelink filter ahead of that. Leading with a date window
+cuts the candidate set first.
 
 *Range comparisons, never YEAR().* A function call cannot use the date index,
-so YEAR(?d) < 1 scans every date in Wikidata. The first window carries only an
-upper bound, which covers everything BCE without negative date literals.
+so YEAR(?d) < 1 scans every date Wikidata holds. The first window carries only
+an upper bound, which covers everything BCE without negative date literals.
 
-*Windows subdivide themselves.* WDQS gives no way to ask what a query will
-cost, and its 60-second budget varies with load, so a window that times out is
-split in half and retried rather than guessed at again.
+*Ask for gzip.* The densest windows return 40MB+ of JSON, and those were
+exactly the ones that arrived truncated — surfacing as a JSON parse error
+tens of thousands of lines in, not as a network error. Compressed they are a
+few MB, and a truncated one now fails cleanly at decompression.
 
-Queries go by POST — a long query in a GET URL can be refused by the proxy in
-front of WDQS, which surfaces as a 502.
+*Halve a window that fails.* WDQS offers no way to ask what a query will cost,
+and its budget moves with load, so the useful response to a failure is a
+narrower window rather than another identical attempt.
+
+Queries go by POST — a long query in a GET URL can be refused by the proxy
+in front of WDQS, which surfaces as a 502.
+
+WDQS blocks anonymous clients, so every run needs a contact address. Pass it
+with --contact, or set MEANWHILE_CONTACT once in your shell.
 
 Usage:
     python extract.py --probe --contact you@example.com
@@ -29,6 +37,7 @@ Usage:
 """
 
 import argparse
+import gzip
 import json
 import os
 import time
@@ -39,22 +48,8 @@ from pathlib import Path
 ENDPOINT = "https://query.wikidata.org/sparql"
 USER_AGENT = "MeanwhileETL/0.1 (https://github.com/drift7420/Study; contact: {contact})"
 
-# Bumped when the cached shape changes, so old caches are ignored rather than
-# silently mixed with a new format.
-CACHE_VERSION = "v2"
-
 MIN_SITELINKS = {"person": 4, "polity": 3, "event": 4}
-DATE_WINDOWS = {"person": 25, "polity": 50, "event": 50}
-LAST_YEAR = {"person": 1900, "polity": 1900, "event": 1950}
-MIN_WINDOW = 1          # stop subdividing at one year
-DETAIL_BATCH = 400
-
-# (property, whether to run it across all windows or only the BCE chunk)
-DRIVERS = {
-    "person": [("P569", True), ("P570", True), ("P1317", False)],
-    "polity": [("P571", True)],
-    "event": [("P585", True), ("P580", True)],
-}
+COORD_BATCH = 400
 
 PROBE = "SELECT ?x WHERE { BIND(1 AS ?x) }"
 
@@ -63,21 +58,43 @@ LABEL_SERVICE = """
                            ?item rdfs:label ?name ; schema:description ?desc . }
 """
 
-# Pass one: identity only. Every column here is cheap; anything needing a
-# second hop belongs in the detail pass.
-MAIN_QUERIES = {
-    "person": """
-SELECT ?item ?name ?desc ?sitelinks ?article WHERE {
+# Every query is driven by a range comparison on a truthy date property, never
+# by YEAR(): a function call cannot use the date index, so YEAR(?d) < 1 scans
+# every date in Wikidata and times the query out. A bare upper bound covers
+# everything BCE without needing negative date literals, which Blazegraph
+# handles unevenly.
+DATE_WINDOWS = {"person": 50, "polity": 100, "event": 100}
+LAST_YEAR = {"person": 1900, "polity": 1900, "event": 1950}
+MIN_WINDOW = 1          # stop subdividing a stubborn window at one year
+
+# (property, whether to run it across all windows or only the BCE chunk)
+DRIVERS = {
+    "person": [("P569", True), ("P570", True), ("P1317", False)],
+    "polity": [("P571", True)],
+    "event": [("P585", True), ("P580", True)],
+}
+
+PERSON_QUERY = """
+SELECT ?item ?name ?desc ?sitelinks ?birth ?birthPrec ?death ?deathPrec ?floruit ?floruitPrec ?article
+WHERE {
   ?item wdt:%DRIVER% ?driver .
   %DATEFILTER%
   ?item wdt:P31 wd:Q5 ; wikibase:sitelinks ?sitelinks .
   FILTER(?sitelinks >= %MIN%)
+  OPTIONAL { ?item p:P569/psv:P569 ?bn .
+             ?bn wikibase:timeValue ?birth ; wikibase:timePrecision ?birthPrec . }
+  OPTIONAL { ?item p:P570/psv:P570 ?dn .
+             ?dn wikibase:timeValue ?death ; wikibase:timePrecision ?deathPrec . }
+  OPTIONAL { ?item p:P1317/psv:P1317 ?fn .
+             ?fn wikibase:timeValue ?floruit ; wikibase:timePrecision ?floruitPrec . }
   OPTIONAL { ?article schema:about ?item ; schema:isPartOf <https://en.wikipedia.org/> . }
 %LABEL%
 }
-""",
-    "polity": """
-SELECT ?item ?name ?desc ?sitelinks ?article WHERE {
+"""
+
+POLITY_QUERY = """
+SELECT ?item ?name ?desc ?sitelinks ?inception ?inceptionPrec ?dissolved ?dissolvedPrec ?article
+WHERE {
   ?item wdt:%DRIVER% ?driver .
   %DATEFILTER%
   ?item wikibase:sitelinks ?sitelinks .
@@ -85,61 +102,63 @@ SELECT ?item ?name ?desc ?sitelinks ?article WHERE {
   ?item wdt:P31/wdt:P279* ?class .
   VALUES ?class { wd:Q3624078 wd:Q3024240 wd:Q417175 wd:Q48349 wd:Q164950
                   wd:Q133156 wd:Q1250464 wd:Q28171280 }
+  OPTIONAL { ?item p:P571/psv:P571 ?in .
+             ?in wikibase:timeValue ?inception ; wikibase:timePrecision ?inceptionPrec . }
+  OPTIONAL { ?item p:P576/psv:P576 ?dn .
+             ?dn wikibase:timeValue ?dissolved ; wikibase:timePrecision ?dissolvedPrec . }
   OPTIONAL { ?article schema:about ?item ; schema:isPartOf <https://en.wikipedia.org/> . }
 %LABEL%
 }
-""",
-    "event": """
-SELECT ?item ?name ?desc ?sitelinks ?article WHERE {
+"""
+
+EVENT_QUERY = """
+SELECT ?item ?name ?desc ?sitelinks ?point ?pointPrec ?start ?startPrec ?end ?endPrec ?article
+WHERE {
   ?item wdt:%DRIVER% ?driver .
   %DATEFILTER%
   ?item wikibase:sitelinks ?sitelinks .
   FILTER(?sitelinks >= %MIN%)
   ?item wdt:P31/wdt:P279* ?class .
   VALUES ?class { wd:Q1190554 wd:Q178561 wd:Q198 wd:Q13418847 }
-  OPTIONAL { ?article schema:about ?item ; schema:isPartOf <https://en.wikipedia.org/> . }
-%LABEL%
-}
-""",
-}
-
-# Pass two: dates with precision, and coordinates, for a known list of items.
-DETAIL_QUERIES = {
-    "person": """
-SELECT ?item ?birth ?birthPrec ?death ?deathPrec ?floruit ?floruitPrec ?lat ?lng WHERE {
-  VALUES ?item { %ITEMS% }
-  OPTIONAL { ?item p:P569/psv:P569 ?bn .
-             ?bn wikibase:timeValue ?birth ; wikibase:timePrecision ?birthPrec . }
-  OPTIONAL { ?item p:P570/psv:P570 ?dn .
-             ?dn wikibase:timeValue ?death ; wikibase:timePrecision ?deathPrec . }
-  OPTIONAL { ?item p:P1317/psv:P1317 ?fn .
-             ?fn wikibase:timeValue ?floruit ; wikibase:timePrecision ?floruitPrec . }
-  OPTIONAL { ?item wdt:P19 ?place . ?place p:P625/psv:P625 ?cn .
-             ?cn wikibase:geoLatitude ?lat ; wikibase:geoLongitude ?lng . }
-}
-""",
-    "polity": """
-SELECT ?item ?inception ?inceptionPrec ?dissolved ?dissolvedPrec ?lat ?lng WHERE {
-  VALUES ?item { %ITEMS% }
-  OPTIONAL { ?item p:P571/psv:P571 ?in .
-             ?in wikibase:timeValue ?inception ; wikibase:timePrecision ?inceptionPrec . }
-  OPTIONAL { ?item p:P576/psv:P576 ?dn .
-             ?dn wikibase:timeValue ?dissolved ; wikibase:timePrecision ?dissolvedPrec . }
-  OPTIONAL { ?item wdt:P36 ?place . ?place p:P625/psv:P625 ?cn .
-             ?cn wikibase:geoLatitude ?lat ; wikibase:geoLongitude ?lng . }
-}
-""",
-    "event": """
-SELECT ?item ?point ?pointPrec ?start ?startPrec ?end ?endPrec ?lat ?lng WHERE {
-  VALUES ?item { %ITEMS% }
   OPTIONAL { ?item p:P585/psv:P585 ?pn .
              ?pn wikibase:timeValue ?point ; wikibase:timePrecision ?pointPrec . }
   OPTIONAL { ?item p:P580/psv:P580 ?sn .
              ?sn wikibase:timeValue ?start ; wikibase:timePrecision ?startPrec . }
   OPTIONAL { ?item p:P582/psv:P582 ?en .
              ?en wikibase:timeValue ?end ; wikibase:timePrecision ?endPrec . }
-  OPTIONAL { ?item wdt:P625 ?anyCoord . ?item p:P625/psv:P625 ?cn .
-             ?cn wikibase:geoLatitude ?lat ; wikibase:geoLongitude ?lng . }
+  OPTIONAL { ?article schema:about ?item ; schema:isPartOf <https://en.wikipedia.org/> . }
+%LABEL%
+}
+"""
+
+TEMPLATES = {"person": PERSON_QUERY, "polity": POLITY_QUERY, "event": EVENT_QUERY}
+
+# Second pass: coordinates only, keyed by QID. Each type reaches its location
+# by a different property.
+COORD_QUERIES = {
+    "person": """
+SELECT ?item ?lat ?lng WHERE {
+  VALUES ?item { %ITEMS% }
+  ?item wdt:P19 ?place .
+  ?place p:P625/psv:P625 ?cn .
+  ?cn wikibase:geoLatitude ?lat ; wikibase:geoLongitude ?lng .
+}
+""",
+    "polity": """
+SELECT ?item ?lat ?lng WHERE {
+  VALUES ?item { %ITEMS% }
+  ?item wdt:P36 ?place .
+  ?place p:P625/psv:P625 ?cn .
+  ?cn wikibase:geoLatitude ?lat ; wikibase:geoLongitude ?lng .
+}
+""",
+    "event": """
+SELECT ?item ?lat ?lng WHERE {
+  VALUES ?item { %ITEMS% }
+  { ?item p:P625/psv:P625 ?cn }
+  UNION
+  { ?item wdt:P276 ?place . ?place p:P625/psv:P625 ?cn }
+  ?cn wikibase:geoLatitude ?lat ; wikibase:geoLongitude ?lng .
 }
 """,
 }
@@ -154,15 +173,13 @@ FIELD_MAP = {
 }
 
 
-# ---------- windows ----------
-
 def date_windows(end, width, start=1):
     """(label, from, to) windows. The first has no lower bound, which covers
     everything BCE with a plain upper-bound comparison."""
     windows = [("bce", None, start)]
-    for low in range(start, end, width):
-        high = min(low + width, end)
-        windows.append((f"{low}-{high}", low, high))
+    for lo in range(start, end, width):
+        hi = min(lo + width, end)
+        windows.append((f"{lo}-{hi}", lo, hi))
     return windows
 
 
@@ -183,7 +200,7 @@ def split_window(low, high):
 
 
 def main_query(type_, driver, low, high):
-    return (MAIN_QUERIES[type_]
+    return (TEMPLATES[type_]
             .replace("%DRIVER%", driver)
             .replace("%DATEFILTER%", date_filter(low, high))
             .replace("%MIN%", str(MIN_SITELINKS[type_]))
@@ -201,33 +218,41 @@ def planned_chunks(type_):
     return out
 
 
-# ---------- transport ----------
+def batched(items, size=COORD_BATCH):
+    for i in range(0, len(items), size):
+        yield items[i:i + size]
 
-def run_query(sparql, contact, retries=3):
-    """POST, because a long query in a GET URL can be refused before it runs."""
+
+def run_query(sparql, contact, retries=4):
+    """POST, because a long query in a GET URL can be refused before it runs.
+
+    Asks for gzip: the densest windows return 40MB+ of JSON, and those are
+    exactly the responses that arrived truncated, surfacing as a JSON parse
+    error thousands of lines in. Compressed, the same result is a few MB and
+    a truncated one fails cleanly at decompression instead of half-parsing.
+    """
     body = urllib.parse.urlencode({"query": sparql, "format": "json"}).encode()
     request = urllib.request.Request(ENDPOINT, data=body, headers={
         "User-Agent": USER_AGENT.format(contact=contact),
         "Accept": "application/sparql-results+json",
+        "Accept-Encoding": "gzip",
         "Content-Type": "application/x-www-form-urlencoded",
     })
     delay = 5
     for attempt in range(retries):
         try:
-            with urllib.request.urlopen(request, timeout=180) as response:
-                return json.loads(response.read().decode())
+            with urllib.request.urlopen(request, timeout=300) as response:
+                payload = response.read()
+                if response.headers.get("Content-Encoding") == "gzip":
+                    payload = gzip.decompress(payload)
+                return json.loads(payload.decode())
         except Exception as exc:                       # noqa: BLE001 - report and back off
             if attempt == retries - 1:
                 raise
-            print(f"      retry {attempt + 1} after {delay}s ({exc})")
+            print(f"    retry {attempt + 1} after {delay}s ({exc})")
             time.sleep(delay)
             delay *= 2
     return None
-
-
-def batched(items, size=DETAIL_BATCH):
-    for i in range(0, len(items), size):
-        yield items[i:i + size]
 
 
 def cell(binding, key):
@@ -235,9 +260,8 @@ def cell(binding, key):
     return value.get("value") if value else None
 
 
-# ---------- shaping ----------
-
-def flatten_main(binding):
+def flatten(binding, type_):
+    """One SPARQL result row to the shape transform.py expects."""
     qid_uri = cell(binding, "item")
     record = {
         "qid": qid_uri.rsplit("/", 1)[-1] if qid_uri else None,
@@ -247,53 +271,71 @@ def flatten_main(binding):
         "lat": None,
         "lng": None,
     }
+
     article = cell(binding, "article")
     if article:
         title = urllib.parse.unquote(article.rsplit("/", 1)[-1]).replace("_", " ")
         record["wiki_title"] = title if title != record["name"] else None
-    return record
 
-
-def flatten_detail(binding, type_):
-    detail = {}
     for field, (time_key, precision_key) in FIELD_MAP[type_].items():
         raw_time = cell(binding, time_key)
         if raw_time:
-            detail[field] = {"time": raw_time, "precision": int(cell(binding, precision_key) or 9)}
-    lat, lng = cell(binding, "lat"), cell(binding, "lng")
-    if lat and lng:
-        detail["lat"], detail["lng"] = float(lat), float(lng)
-    return detail
+            record[field] = {"time": raw_time, "precision": int(cell(binding, precision_key) or 9)}
+
+    return record
 
 
-def merge_details(records, details):
-    """Attach {qid: {...}} to records. Records with no detail keep lat/lng None
-    and are dropped later by transform, which needs both a date and a region."""
+def merge_coordinates(records, coordinates):
+    """Attach {qid: (lat, lng)} to records. Records without one keep lat/lng None
+    and are dropped later by transform, which needs a region."""
     for record in records:
-        found = details.get(record["qid"])
+        found = coordinates.get(record["qid"])
         if found:
-            record.update(found)
+            record["lat"], record["lng"] = found
     return records
 
 
-# ---------- passes ----------
+def fetch_coordinates(qids, type_, contact, cache_dir):
+    coordinates = {}
+    for index, batch in enumerate(batched(sorted(qids))):
+        cached = cache_dir / f"{type_}-coords-{index}.json"
+        if cached.exists():
+            coordinates.update(json.loads(cached.read_text()))
+            continue
+
+        values = " ".join(f"wd:{q}" for q in batch)
+        payload = run_query(COORD_QUERIES[type_].replace("%ITEMS%", values), contact)
+        found = {}
+        for binding in payload["results"]["bindings"]:
+            qid = cell(binding, "item").rsplit("/", 1)[-1]
+            found[qid] = (float(cell(binding, "lat")), float(cell(binding, "lng")))
+        cached.write_text(json.dumps(found))
+        print(f"  coords {index + 1}: {len(found)}/{len(batch)} located")
+        coordinates.update(found)
+        time.sleep(1)
+    return coordinates
+
 
 def fetch_chunk(label, type_, driver, low, high, contact, cache_dir, depth=0):
-    """Run one window, halving it and retrying if WDQS won't finish it."""
-    cached = cache_dir / f"{CACHE_VERSION}-{label}.json"
+    """Run one window, halving it and retrying if WDQS won't deliver it whole.
+
+    The windows that failed were the densest ones, so the useful response to a
+    failure is a narrower window rather than another identical attempt.
+    """
+    cached = cache_dir / f"{label}.json"
     if cached.exists():
         return json.loads(cached.read_text()), []
 
-    indent = "  " + "  " * depth
-    print(f"{indent}{label}: querying…")
+    indent = "    " * depth
+    print(f"  {indent}{label}: querying…")
     try:
         payload = run_query(main_query(type_, driver, low, high), contact)
     except Exception as exc:                           # noqa: BLE001
         halves = split_window(low, high)
         if not halves:
-            print(f"{indent}{label}: FAILED, cannot split further ({exc})")
+            print(f"  {indent}{label}: FAILED, cannot split further ({exc})")
             return [], [label]
-        print(f"{indent}{label}: too slow, splitting")
+        print(f"  {indent}{label}: splitting ({exc})")
         rows, failed = [], []
         for half_low, half_high in halves:
             half_rows, half_failed = fetch_chunk(
@@ -303,39 +345,17 @@ def fetch_chunk(label, type_, driver, low, high, contact, cache_dir, depth=0):
             failed.extend(half_failed)
         return rows, failed
 
-    rows = [flatten_main(b) for b in payload["results"]["bindings"]]
+    rows = [flatten(b, type_) for b in payload["results"]["bindings"]]
     cached.write_text(json.dumps(rows))
-    print(f"{indent}{label}: {len(rows)} rows")
-    time.sleep(1)          # be a good citizen on a shared public endpoint
+    print(f"  {indent}{label}: {len(rows)} rows")
+    time.sleep(2)              # be a good citizen on a shared public endpoint
     return rows, []
-
-
-def fetch_details(qids, type_, contact, cache_dir):
-    details = {}
-    batches = list(batched(sorted(qids)))
-    for index, batch in enumerate(batches, start=1):
-        cached = cache_dir / f"{CACHE_VERSION}-{type_}-detail-{index}.json"
-        if cached.exists():
-            details.update(json.loads(cached.read_text()))
-            continue
-
-        values = " ".join(f"wd:{q}" for q in batch)
-        payload = run_query(DETAIL_QUERIES[type_].replace("%ITEMS%", values), contact)
-        found = {}
-        for binding in payload["results"]["bindings"]:
-            qid = cell(binding, "item").rsplit("/", 1)[-1]
-            found[qid] = flatten_detail(binding, type_)
-        cached.write_text(json.dumps(found))
-        print(f"  details {index}/{len(batches)}: {len(found)} items")
-        details.update(found)
-        time.sleep(1)
-    return details
 
 
 def extract(type_, cache_dir, contact):
     cache_dir.mkdir(parents=True, exist_ok=True)
-    chunks = planned_chunks(type_)
     records, failed = [], []
+    chunks = planned_chunks(type_)
 
     for index, (label, driver, low, high) in enumerate(chunks, start=1):
         print(f"[{index}/{len(chunks)}]", end=" ")
@@ -343,24 +363,19 @@ def extract(type_, cache_dir, contact):
         records.extend(rows)
         failed.extend(chunk_failed)
 
-    # Deduplicate before the detail pass: the driver properties overlap heavily
-    # (most people have both a birth and a death date), and asking twice for
-    # the same item's dates is the one cost that's entirely avoidable.
-    unique = {r["qid"]: r for r in records if r["qid"]}
-    print(f"\n  {len(records)} rows, {len(unique)} distinct items")
-
-    details = fetch_details(set(unique), type_, contact, cache_dir)
-    merge_details(unique.values(), details)
-    located = sum(1 for r in unique.values() if r["lat"] is not None)
-    print(f"  {located}/{len(unique)} have coordinates")
-
     if failed:
         print(f"\n  {len(failed)} window(s) failed even at one year:")
         for label in failed:
             print(f"    {label}")
         print("  Re-run to retry only these; everything else is cached.\n")
 
-    return list(unique.values())
+    print(f"  looking up coordinates for {len(records)} records…")
+    coordinates = fetch_coordinates({r["qid"] for r in records if r["qid"]},
+                                    type_, contact, cache_dir)
+    merge_coordinates(records, coordinates)
+    located = sum(1 for r in records if r["lat"] is not None)
+    print(f"  {located}/{len(records)} have coordinates")
+    return records
 
 
 def main():

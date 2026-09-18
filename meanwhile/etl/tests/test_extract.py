@@ -2,15 +2,13 @@
 
 The queries themselves can't be tested without WDQS, but the windowing, the
 subdivision, the batching and the shape of what comes back can be — and those
-are where a bug costs a thirty-minute run.
+are where a bug costs a half-hour run.
 """
 
 import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-
-import pytest
 
 import extract
 import transform as tf
@@ -39,12 +37,21 @@ def test_a_bounded_window_filters_on_both_sides():
         '?driver < "1550-01-01T00:00:00Z"^^xsd:dateTime)')
 
 
+def test_chunk_labels_are_stable():
+    """Cache files are named after these labels, so changing them silently
+    discards a completed run. A rename should have to fail a test first."""
+    labels = [label for label, _, _, _ in extract.planned_chunks("person")]
+    for expected in ("person-P569-bce", "person-P569-1-51", "person-P569-1851-1900",
+                     "person-P570-bce", "person-P1317-bce"):
+        assert expected in labels
+
+
 # ---------- subdivision ----------
 
 def test_a_window_splits_into_two_halves_that_tile_it():
-    (a_low, a_high), (b_low, b_high) = extract.split_window(1500, 1600)
-    assert (a_low, a_high) == (1500, 1550)
-    assert (b_low, b_high) == (1550, 1600)
+    first, second = extract.split_window(1750, 1800)
+    assert first == (1750, 1775)
+    assert second == (1775, 1800)
 
 
 def test_an_odd_window_still_tiles_without_gaps():
@@ -69,7 +76,7 @@ def test_repeated_subdivision_terminates():
             pending.extend(halves)
 
 
-# ---------- chunk planning ----------
+# ---------- queries ----------
 
 def test_chunks_are_distinctly_labelled():
     for type_ in ("person", "polity", "event"):
@@ -80,8 +87,8 @@ def test_chunks_are_distinctly_labelled():
 def test_queries_substitute_every_placeholder():
     for type_ in ("person", "polity", "event"):
         for label, driver, low, high in extract.planned_chunks(type_):
-            sparql = extract.main_query(type_, driver, low, high)
-            assert "%" not in sparql, f"{label} left a placeholder unsubstituted"
+            assert "%" not in extract.main_query(type_, driver, low, high), \
+                f"{label} left a placeholder unsubstituted"
 
 
 def test_no_query_calls_YEAR():
@@ -105,16 +112,6 @@ def test_every_query_leads_with_its_date_filter():
                         f"{label}: {late} precedes the date filter"
 
 
-@pytest.mark.parametrize("type_", ["person", "polity", "event"])
-def test_the_main_pass_never_does_a_second_hop(type_):
-    """Dates and coordinates belong in the detail pass; inline they turn a
-    multi-million-row scan into a join."""
-    _, driver, low, high = extract.planned_chunks(type_)[0]
-    sparql = extract.main_query(type_, driver, low, high)
-    for expensive in ("psv:", "wdt:P625", "wdt:P19", "wdt:P36"):
-        assert expensive not in sparql, f"{type_} main query still does {expensive}"
-
-
 def test_death_and_floruit_drive_chunks_so_undated_births_survive():
     labels = [label for label, _, _, _ in extract.planned_chunks("person")]
     assert any("P570" in label for label in labels)
@@ -134,56 +131,47 @@ def binding(**kw):
     return {k: {"value": v} for k, v in kw.items()}
 
 
-def test_main_pass_shape():
-    row = extract.flatten_main(binding(
+def test_flatten_produces_what_transform_consumes():
+    row = extract.flatten(binding(
         item="http://www.wikidata.org/entity/Q935",
         name="Isaac Newton", desc="English mathematician", sitelinks="180",
-        article="https://en.wikipedia.org/wiki/Isaac_Newton"))
+        birth="1643-01-04T00:00:00Z", birthPrec="11",
+        death="1727-03-31T00:00:00Z", deathPrec="11",
+        article="https://en.wikipedia.org/wiki/Isaac_Newton"), "person")
+
     assert row["qid"] == "Q935"
     assert row["sitelinks"] == 180
+    assert row["birth"] == {"time": "1643-01-04T00:00:00Z", "precision": 11}
     assert row["wiki_title"] is None          # title matches the label
-    assert row["lat"] is None                 # filled by the detail pass
+
+    extract.merge_coordinates([row], {"Q935": (52.8, -0.6)})
+    built = tf.build_row(row, tf.PERSON)
+    assert built is not None
+    assert (built.active_start, built.active_end) == (1643, 1727)
+    assert built.region_id is not None
 
 
-def test_main_pass_keeps_a_wiki_title_that_differs_from_the_label():
-    row = extract.flatten_main(binding(
+def test_flatten_keeps_a_wiki_title_that_differs_from_the_label():
+    row = extract.flatten(binding(
         item="http://www.wikidata.org/entity/Q8011",
         name="Ibn Sina", sitelinks="90",
-        article="https://en.wikipedia.org/wiki/Avicenna"))
+        article="https://en.wikipedia.org/wiki/Avicenna"), "person")
     assert row["wiki_title"] == "Avicenna"
 
 
-def test_detail_pass_shape():
-    detail = extract.flatten_detail(binding(
-        item="http://www.wikidata.org/entity/Q935",
-        birth="1643-01-04T00:00:00Z", birthPrec="11",
-        death="1727-03-31T00:00:00Z", deathPrec="11",
-        lat="52.8", lng="-0.6"), "person")
-    assert detail["birth"] == {"time": "1643-01-04T00:00:00Z", "precision": 11}
-    assert (detail["lat"], detail["lng"]) == (52.8, -0.6)
+def test_flatten_survives_missing_optionals():
+    row = extract.flatten(binding(
+        item="http://www.wikidata.org/entity/Q1", name="Someone", sitelinks="5"), "person")
+    assert row["desc"] is None
+    assert row["lat"] is None and row["lng"] is None
+    assert "birth" not in row
 
 
-def test_the_two_passes_join_into_something_transform_accepts():
-    records = [extract.flatten_main(binding(
-        item="http://www.wikidata.org/entity/Q935",
-        name="Isaac Newton", desc="English mathematician", sitelinks="180"))]
-    details = {"Q935": extract.flatten_detail(binding(
-        birth="1643-01-04T00:00:00Z", birthPrec="11",
-        death="1727-03-31T00:00:00Z", deathPrec="11",
-        lat="52.8", lng="-0.6"), "person")}
-
-    extract.merge_details(records, details)
-    row = tf.build_row(records[0], tf.PERSON)
-    assert row is not None
-    assert (row.active_start, row.active_end) == (1643, 1727)
-    assert row.region_id is not None
-
-
-def test_an_item_the_detail_pass_missed_is_left_alone():
+def test_an_item_the_coordinate_pass_missed_is_left_alone():
     records = [{"qid": "Q1", "lat": None, "lng": None},
                {"qid": "Q2", "lat": None, "lng": None}]
-    extract.merge_details(records, {"Q1": {"lat": 41.9, "lng": 12.5}})
+    extract.merge_coordinates(records, {"Q1": (41.9, 12.5)})
     assert records[0]["lat"] == 41.9
     assert records[1]["lat"] is None
-    # No date and no region, so transform drops it rather than inventing one.
+    # No region, so transform drops it rather than inventing one.
     assert tf.build_row({**records[1], "name": "x", "sitelinks": 50}, tf.PERSON) is None

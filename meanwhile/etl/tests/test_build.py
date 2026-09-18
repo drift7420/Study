@@ -116,6 +116,32 @@ def test_bce_dates_round_trip_through_the_database(tmp_path):
     assert start < end < 0
 
 
+def test_an_item_matching_two_class_trees_yields_one_row(tmp_path):
+    """Wikidata's hierarchies overlap, so the same QID can arrive from two
+    extractions. entries.qid is UNIQUE, so the build fails unless one wins."""
+    shared = {"qid": "Q7462", "name": "Mali Empire", "sitelinks": 60,
+              "lat": 16.8, "lng": -3.0}
+    as_polity = tf.transform([{**shared, "inception": wd("+1235-01-01T00:00:00Z"),
+                               "dissolved": wd("+1670-01-01T00:00:00Z")}], tf.POLITY)
+    as_event = tf.transform([{**shared, "start_time": wd("+1235-01-01T00:00:00Z"),
+                              "end_time": wd("+1670-01-01T00:00:00Z")}], tf.EVENT)
+
+    rows = tf.deduplicate(as_polity + as_event)
+    assert len(rows) == 1
+    assert rows[0].type == tf.POLITY      # the more specific reading wins
+
+    build_db.build(rows, tmp_path / "dedup.db")      # would raise without it
+
+
+def test_deduplicate_prefers_the_better_sourced_row_within_a_type(tmp_path):
+    quiet = tf.transform([{"qid": "Q1", "name": "X", "sitelinks": 10, "lat": 41.9,
+                           "lng": 12.5, "inception": wd("+1500-01-01T00:00:00Z")}], tf.POLITY)
+    loud = tf.transform([{"qid": "Q1", "name": "X", "sitelinks": 90, "lat": 41.9,
+                          "lng": 12.5, "inception": wd("+1500-01-01T00:00:00Z")}], tf.POLITY)
+    rows = tf.deduplicate(quiet + loud)
+    assert len(rows) == 1 and rows[0].notability == 90
+
+
 def test_mockup_json_is_written(tmp_path):
     rows, _ = build(tmp_path)
     out = tmp_path / "mockup_data.json"

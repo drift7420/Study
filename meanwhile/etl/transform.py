@@ -166,6 +166,29 @@ def transform(records, type_, thresholds=None):
     return list(best.values())
 
 
+# When one item matches more than one class tree, the more specific reading
+# wins. A person is unambiguous; between a state and an occurrence, the state
+# is the stronger claim about what the thing *is*.
+TYPE_PRIORITY = {PERSON: 0, POLITY: 1, EVENT: 2}
+
+
+def deduplicate(rows):
+    """One row per QID across all types.
+
+    Wikidata's class trees overlap — a dynasty can be reachable from both the
+    state and the occurrence hierarchies — so the same item arrives twice from
+    two extractions. The app shows one entry per thing, and the database
+    enforces it, so the duplicate has to be resolved here.
+    """
+    best = {}
+    for row in rows:
+        seen = best.get(row.qid)
+        if seen is None or ((TYPE_PRIORITY[row.type], -row.notability)
+                            < (TYPE_PRIORITY[seen.type], -seen.notability)):
+            best[row.qid] = row
+    return list(best.values())
+
+
 def coverage(rows):
     """Rows per region per 500-year bucket — the diagnostic that says whether
     the dataset actually supports the app's premise."""

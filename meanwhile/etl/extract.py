@@ -297,8 +297,14 @@ def merge_coordinates(records, coordinates):
 
 def fetch_coordinates(qids, type_, contact, cache_dir):
     coordinates = {}
+    # The batch number alone is not a safe cache key: batches are slices of a
+    # sorted list, so recovering one failed window shifts every boundary and
+    # cached batches would no longer hold the items they are named for. Keying
+    # on the set size too means a changed set refetches rather than silently
+    # skipping the items that moved.
+    population = len(qids)
     for index, batch in enumerate(batched(sorted(qids))):
-        cached = cache_dir / f"{type_}-coords-{index}.json"
+        cached = cache_dir / f"{type_}-coords-{population}-{index}.json"
         if cached.exists():
             coordinates.update(json.loads(cached.read_text()))
             continue

@@ -167,6 +167,12 @@ def main():
     if not rows:
         raise SystemExit("no rows — run extract.py first")
 
+    deduplicated = tf.deduplicate(rows)
+    if len(deduplicated) != len(rows):
+        print(f"{len(rows) - len(deduplicated)} item(s) matched more than one "
+              f"type and were resolved to one row")
+    rows = deduplicated
+
     out = Path(args.out)
     size = build(rows, out)
     report(rows)

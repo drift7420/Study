@@ -200,3 +200,31 @@ def test_coverage_counts_a_long_span_in_every_bucket_it_touches():
            "dissolved": wd("+1100-01-01T00:00:00Z", 9)}
     rows = tf.transform([rec], tf.POLITY)
     assert len(tf.coverage(rows)) == 3      # 0-500, 500-1000, 1000-1500
+
+
+# ---------- timeline bounds ----------
+
+def test_a_palaeolithic_date_is_dropped():
+    """Wikidata holds dates at 72,000 BCE. They are unreachable in an app whose
+    timeline starts at 3000 BCE, and they stretch the coverage report across
+    dozens of empty columns."""
+    rec = {"qid": "Q9", "name": "Toba eruption", "sitelinks": 40, "lat": 2.6, "lng": 98.8,
+           "point_in_time": wd("-74000-01-01T00:00:00Z", 6)}
+    assert tf.build_row(rec, tf.EVENT) is None
+
+
+def test_a_span_straddling_the_floor_is_clamped_not_dropped():
+    rec = {"qid": "Q10", "name": "A long culture", "sitelinks": 40, "lat": 41.9, "lng": 12.5,
+           "start_time": wd("-4000-01-01T00:00:00Z", 9),
+           "end_time": wd("-2000-01-01T00:00:00Z", 9)}
+    row = tf.build_row(rec, tf.EVENT)
+    assert row is not None
+    assert row.active_start == tf.FLOOR
+    assert row.active_end == -1999
+
+
+def test_an_end_beyond_the_present_is_clamped():
+    rec = {"qid": "Q11", "name": "Somewhere", "sitelinks": 40, "lat": 41.9, "lng": 12.5,
+           "inception": wd("+1900-01-01T00:00:00Z", 9)}
+    row = tf.build_row(rec, tf.POLITY)
+    assert row.active_end == tf.CEILING

@@ -306,7 +306,7 @@ def fetch_coordinates(qids, type_, contact, cache_dir):
     for index, batch in enumerate(batched(sorted(qids))):
         cached = cache_dir / f"{type_}-coords-{population}-{index}.json"
         if cached.exists():
-            coordinates.update(json.loads(cached.read_text()))
+            coordinates.update(json.loads(cached.read_text(encoding="utf-8")))
             continue
 
         values = " ".join(f"wd:{q}" for q in batch)
@@ -315,7 +315,7 @@ def fetch_coordinates(qids, type_, contact, cache_dir):
         for binding in payload["results"]["bindings"]:
             qid = cell(binding, "item").rsplit("/", 1)[-1]
             found[qid] = (float(cell(binding, "lat")), float(cell(binding, "lng")))
-        cached.write_text(json.dumps(found))
+        cached.write_text(json.dumps(found), encoding="utf-8")
         print(f"  coords {index + 1}: {len(found)}/{len(batch)} located")
         coordinates.update(found)
         time.sleep(1)
@@ -330,7 +330,7 @@ def fetch_chunk(label, type_, driver, low, high, contact, cache_dir, depth=0):
     """
     cached = cache_dir / f"{label}.json"
     if cached.exists():
-        return json.loads(cached.read_text()), []
+        return json.loads(cached.read_text(encoding="utf-8")), []
 
     indent = "    " * depth
     print(f"  {indent}{label}: querying…")
@@ -352,7 +352,7 @@ def fetch_chunk(label, type_, driver, low, high, contact, cache_dir, depth=0):
         return rows, failed
 
     rows = [flatten(b, type_) for b in payload["results"]["bindings"]]
-    cached.write_text(json.dumps(rows))
+    cached.write_text(json.dumps(rows), encoding="utf-8")
     print(f"  {indent}{label}: {len(rows)} rows")
     time.sleep(2)              # be a good citizen on a shared public endpoint
     return rows, []
@@ -411,7 +411,7 @@ def main():
     records = extract(args.type, Path(args.cache), args.contact)
     out = Path(args.out)
     out.parent.mkdir(parents=True, exist_ok=True)
-    out.write_text(json.dumps(records))
+    out.write_text(json.dumps(records), encoding="utf-8")
     print(f"{len(records)} raw {args.type} records -> {out}")
 
 

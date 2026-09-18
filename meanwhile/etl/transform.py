@@ -18,6 +18,14 @@ import regions as regions_mod
 
 PRESENT = 2026
 
+# The app's timeline runs 3000 BCE to the present. Wikidata holds dates well
+# outside that — palaeolithic eruptions at 72,000 BCE, items dated into the
+# 2500s — and a handful of them stretch the coverage report across forty empty
+# columns while being unreachable in the app anyway. Rows wholly outside the
+# window are dropped; rows that straddle an edge are clamped to it.
+FLOOR = 1 - 3000        # 3000 BCE in astronomical years
+CEILING = PRESENT
+
 ASSUMED_LIFESPAN = 80      # birth known, death not
 ASSUMED_PRE_DEATH = 60     # death known, birth not
 FLORUIT_SPAN = 30          # only "active around" known
@@ -123,6 +131,10 @@ def build_row(rec, type_, thresholds=None) -> Row | None:
         if not span:
             return None
         start, end, date_confidence = span
+
+    if end < FLOOR or start > CEILING:
+        return None
+    start, end = max(start, FLOOR), min(end, CEILING)
 
     region_id, region_confidence = regions_mod.assign(rec.get("lat"), rec.get("lng"))
     if region_id is None:

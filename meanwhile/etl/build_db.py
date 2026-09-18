@@ -131,18 +131,25 @@ def report(rows):
         print(region.name.ljust(22) + cells)
 
 
-def write_mockup_json(rows, path, per_region=60):
+def write_mockup_json(rows, path, per_cell=12, era=250):
     """A trimmed slice the HTML prototype can eat, so the design can be tested
-    against real data before any app code exists."""
+    against real data before any app code exists.
+
+    Sampled per region *per era*, not per region: the dataset is so weighted
+    towards recent Europe that a flat per-region cap would hand the prototype
+    the nineteenth century and nothing before it, which is the one thing the
+    prototype is meant to test.
+    """
     kept, counts = [], {}
     for row in sorted(rows, key=lambda r: -r.notability):
-        key = row.region_id
-        if counts.get(key, 0) >= per_region:
-            continue
-        counts[key] = counts.get(key, 0) + 1
-        kept.append([row.name, row.type, row.active_start, row.active_end,
-                     row.region_id, row.notability, row.description, row.wiki_title])
-    path.write_text(json.dumps(kept, ensure_ascii=False))
+        for bucket in range(row.active_start // era, row.active_end // era + 1):
+            key = (row.region_id, bucket)
+            if counts.get(key, 0) < per_cell:
+                counts[key] = counts.get(key, 0) + 1
+                kept.append([row.name, row.type, row.active_start, row.active_end,
+                             row.region_id, row.notability, row.description, row.wiki_title])
+                break
+    path.write_text(json.dumps(kept, ensure_ascii=False), encoding="utf-8")
     print(f"\n{len(kept)} entries -> {path} (for the HTML prototype)")
 
 
@@ -159,7 +166,7 @@ def main():
         if not source.exists():
             print(f"skipping {type_}: {source} not found")
             continue
-        records = json.loads(source.read_text())
+        records = json.loads(source.read_text(encoding="utf-8"))
         produced = tf.transform(records, type_)
         print(f"{type_}: {len(records)} raw -> {len(produced)} kept")
         rows.extend(produced)

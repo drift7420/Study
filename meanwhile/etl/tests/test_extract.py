@@ -182,24 +182,37 @@ def test_an_item_the_coordinate_pass_missed_is_left_alone():
 
 # ---------- coordinate fallback ----------
 
-def test_the_most_specific_coordinate_wins():
-    """Birthplace beats place of death beats country: all three are real
-    locations, but a country centroid can land someone in the wrong region."""
-    rows = [(3, 35.0, 105.0), (1, 30.6, 114.3), (2, 39.9, 116.4)]
-    assert extract.best_coordinate(rows) == (1, 30.6, 114.3)
+def test_a_point_is_read_longitude_first():
+    """WKT puts longitude first, which is the opposite of every other place
+    coordinates appear in this pipeline."""
+    assert extract.parse_point("Point(114.3 30.6)") == (30.6, 114.3)
 
 
-def test_a_country_centroid_is_kept_when_it_is_all_there_is():
-    assert extract.best_coordinate([(3, 35.0, 105.0)]) == (3, 35.0, 105.0)
+def test_a_point_on_another_globe_is_skipped():
+    """Wikidata prefixes the globe's URI for anything off Earth. A crater on
+    Mars is not a place in any region."""
+    assert extract.parse_point("<http://www.wikidata.org/entity/Q111> Point(0 0)") is None
+    assert extract.parse_point("Point(200 100)") is None
+    assert extract.parse_point("not a point") is None
 
 
-def test_every_type_ranks_its_sources():
+def test_each_type_tries_three_properties_most_specific_first():
     for type_ in ("person", "polity", "event"):
-        query = extract.COORD_QUERIES[type_]
-        labels = extract.COORD_SOURCE[type_]
-        for rank in labels:
-            assert f"BIND({rank} AS ?rank)" in query, f"{type_} rank {rank} unranked"
-        assert set(labels) == {1, 2, 3}
+        properties = extract.COORD_PROPERTIES[type_]
+        assert len(properties) == 3
+        assert len({source for _, source in properties}) == 3
+
+
+def test_a_property_query_is_one_join_with_no_union():
+    """The three-property UNION timed out on 288 batches out of 288."""
+    query = extract.coord_query("P19", ["Q1", "Q2"])
+    assert "UNION" not in query
+    assert "wdt:P19/wdt:P625" in query
+    assert "wd:Q1 wd:Q2" in query
+
+
+def test_an_item_carrying_its_own_coordinate_asks_for_it_directly():
+    assert "?item wdt:P625 ?coord" in extract.coord_query(None, ["Q1"])
 
 
 def test_merge_records_the_source_alongside_the_coordinate():
@@ -337,57 +350,157 @@ def test_throttling_does_not_get_mistaken_for_a_window_being_too_big(tmp_path, m
 
 # ---------- a failed coordinate batch ----------
 
-def coord_binding(qid, lat, lng, rank):
+def coord_binding(qid, lat, lng):
     return binding(item=f"http://www.wikidata.org/entity/{qid}",
-                   lat=str(lat), lng=str(lng), rank=str(rank))
+                   coord=f"Point({lng} {lat})")
 
 
-def test_a_failed_coordinate_batch_costs_one_batch_not_the_whole_run(tmp_path, monkeypatch):
-    """This is the bug that made a two-hour run produce nothing: the exception
-    escaped extract(), so the raw file was never rewritten and the build read
-    the previous run's records — indistinguishable from a run that did nothing."""
-    monkeypatch.setattr(extract, "COORD_BATCH", 2)
+def test_a_less_specific_property_only_runs_on_what_is_left(tmp_path, monkeypatch):
+    monkeypatch.setattr(extract.time, "sleep", lambda _: None)
+    asked = []
+
+    def fake(sparql, contact, retries=4):
+        asked.append(sparql)
+        if "wdt:P19/" in sparql:
+            return {"results": {"bindings": [coord_binding("Q1", 30.6, 114.3)]}}
+        return {"results": {"bindings": [coord_binding("Q2", 41.9, 12.5)]}}
+
+    monkeypatch.setattr(extract, "run_query", fake)
+    coordinates, failed = extract.fetch_coordinates(["Q1", "Q2"], "person", "c", tmp_path)
+
+    assert coordinates == {"Q1": (30.6, 114.3, "birthplace"),
+                           "Q2": (41.9, 12.5, "death place")}
+    assert failed == set()
+    assert "wd:Q1" not in asked[1], "an item already placed was asked about again"
+
+
+def test_a_country_centroid_is_kept_when_it_is_all_there_is(tmp_path, monkeypatch):
     monkeypatch.setattr(extract.time, "sleep", lambda _: None)
 
     def fake(sparql, contact, retries=4):
-        if "wd:Q1 " in sparql:
-            raise urllib.error.HTTPError("u", 502, "Bad Gateway", {}, None)
-        return {"results": {"bindings": [coord_binding("Q3", 30.6, 114.3, 1)]}}
+        if "wdt:P27/" in sparql:
+            return {"results": {"bindings": [coord_binding("Q1", 35.0, 105.0)]}}
+        return {"results": {"bindings": []}}
 
     monkeypatch.setattr(extract, "run_query", fake)
-    coordinates, failed = extract.fetch_coordinates(
-        {"Q1", "Q2", "Q3", "Q4"}, "person", "c", tmp_path)
+    coordinates, _ = extract.fetch_coordinates(["Q1"], "person", "c", tmp_path)
+    assert coordinates == {"Q1": (35.0, 105.0, "country")}
 
-    assert coordinates == {"Q3": (30.6, 114.3, "birthplace")}
-    assert failed == [0]
+
+def test_a_failed_batch_is_halved_rather_than_given_up_on(tmp_path, monkeypatch):
+    monkeypatch.setattr(extract, "COORD_BATCH", 4)
+    monkeypatch.setattr(extract, "MIN_COORD_BATCH", 1)
+    monkeypatch.setattr(extract.time, "sleep", lambda _: None)
+
+    sizes = []
+
+    def fake(sparql, contact, retries=4):
+        size = sparql.count("wd:Q")
+        sizes.append(size)
+        if size > 2:
+            raise urllib.error.HTTPError("u", 504, "Gateway Timeout", {}, None)
+        return {"results": {"bindings": [coord_binding("Q1", 41.9, 12.5)]}}
+
+    monkeypatch.setattr(extract, "run_query", fake)
+    coordinates, failed, interrupted = extract.fetch_by_property(
+        ["Q1", "Q2", "Q3", "Q4"], "P19", "person", "c", tmp_path)
+
+    assert sizes == [4, 2, 2]
+    assert not interrupted
+    assert coordinates == {"Q1": (41.9, 12.5)}
+    assert failed == []
+
+
+def test_a_batch_that_fails_at_the_floor_is_reported_not_retried_forever(tmp_path, monkeypatch):
+    monkeypatch.setattr(extract, "COORD_BATCH", 2)
+    monkeypatch.setattr(extract, "MIN_COORD_BATCH", 2)
+    monkeypatch.setattr(extract.time, "sleep", lambda _: None)
+
+    def fake(sparql, contact, retries=4):
+        raise urllib.error.HTTPError("u", 504, "Gateway Timeout", {}, None)
+
+    monkeypatch.setattr(extract, "run_query", fake)
+    coordinates, failed, _ = extract.fetch_by_property(
+        ["Q1", "Q2"], "P19", "person", "c", tmp_path)
+    assert coordinates == {}
+    assert failed == ["Q1", "Q2"]
+    assert list(tmp_path.glob("*.json")) == []   # nothing cached, so a re-run retries
 
 
 def test_a_failed_batch_is_not_cached_so_a_re_run_retries_it(tmp_path, monkeypatch):
     monkeypatch.setattr(extract, "COORD_BATCH", 2)
+    monkeypatch.setattr(extract, "MIN_COORD_BATCH", 2)
     monkeypatch.setattr(extract.time, "sleep", lambda _: None)
 
     attempts = []
 
     def fake(sparql, contact, retries=4):
         attempts.append(sparql)
-        if "wd:Q1 " in sparql and len(attempts) == 1:
+        if len(attempts) == 1:
             raise RuntimeError("502 Bad Gateway")
-        return {"results": {"bindings": [coord_binding("Q1", 41.9, 12.5, 2)]}}
+        return {"results": {"bindings": [coord_binding("Q1", 41.9, 12.5)]}}
 
     monkeypatch.setattr(extract, "run_query", fake)
-    qids = {"Q1", "Q2", "Q3", "Q4"}
-    extract.fetch_coordinates(qids, "person", "c", tmp_path)
-    coordinates, failed = extract.fetch_coordinates(qids, "person", "c", tmp_path)
+    extract.fetch_by_property(["Q1", "Q2"], "P19", "person", "c", tmp_path)
+    coordinates, failed, _ = extract.fetch_by_property(
+        ["Q1", "Q2"], "P19", "person", "c", tmp_path)
 
     assert failed == []
-    assert coordinates["Q1"] == (41.9, 12.5, "death place")
+    assert coordinates == {"Q1": (41.9, 12.5)}
 
 
-def test_the_coordinate_cache_key_changes_with_the_batch_size(tmp_path, monkeypatch):
-    """Batches are named by index, so 1000-item batches must not read caches
-    written when they held 400."""
+def test_ctrl_c_keeps_what_is_already_placed(tmp_path, monkeypatch):
+    """The coordinate pass runs for hours. Stopping it should leave a smaller
+    database, not send the run back to the start."""
+    monkeypatch.setattr(extract, "COORD_BATCH", 1)
     monkeypatch.setattr(extract.time, "sleep", lambda _: None)
-    monkeypatch.setattr(extract, "run_query",
-                        lambda *a, **k: {"results": {"bindings": []}})
-    extract.fetch_coordinates({"Q1"}, "person", "c", tmp_path)
-    assert (tmp_path / f"v{extract.COORD_VERSION}-person-coords-1-0.json").exists()
+
+    calls = []
+
+    def fake(sparql, contact, retries=4):
+        calls.append(sparql)
+        if len(calls) > 1:
+            raise KeyboardInterrupt
+        return {"results": {"bindings": [coord_binding("Q1", 41.9, 12.5)]}}
+
+    monkeypatch.setattr(extract, "run_query", fake)
+    coordinates, failed = extract.fetch_coordinates(
+        ["Q1", "Q2", "Q3"], "person", "c", tmp_path)
+
+    assert coordinates == {"Q1": (41.9, 12.5, "birthplace")}
+    assert len(calls) == 2, "it kept querying after the interrupt"
+
+
+def test_a_cached_batch_answers_only_for_the_items_it_holds(tmp_path, monkeypatch):
+    """Batches are slices of an ordered list, so one recovered window shifts
+    every boundary after it. A cache named by index would then hand back
+    coordinates for items it was never asked about."""
+    first = extract.coord_cache_path(tmp_path, "person", "P19", ["Q1", "Q2"])
+    shifted = extract.coord_cache_path(tmp_path, "person", "P19", ["Q2", "Q3"])
+    assert first != shifted
+    assert extract.coord_cache_path(tmp_path, "person", "P20", ["Q1", "Q2"]) != first
+
+
+# ---------- what gets asked about first ----------
+
+def test_the_most_notable_are_placed_first(tmp_path):
+    """A run cut short should still have placed the entries most likely to be
+    shown, not an arbitrary slice of the alphabet."""
+    records = [{"qid": "Q9", "sitelinks": 3}, {"qid": "Q1", "sitelinks": 200},
+               {"qid": "Q5", "sitelinks": 25}]
+    assert extract.by_notability(records) == ["Q1", "Q5", "Q9"]
+
+
+def test_a_qid_seen_twice_is_asked_about_once():
+    records = [{"qid": "Q1", "sitelinks": 5}, {"qid": "Q1", "sitelinks": 90}]
+    assert extract.by_notability(records) == ["Q1"]
+
+
+def test_an_added_record_only_disturbs_its_own_tier():
+    """Batches are cut within a tier, so a record recovered by a re-run
+    invalidates that tier's caches and leaves the others alone."""
+    base = [{"qid": f"Q{n}", "sitelinks": 100} for n in range(5)]
+    base += [{"qid": f"R{n}", "sitelinks": 5} for n in range(5)]
+    before = extract.by_notability(base)
+    after = extract.by_notability(base + [{"qid": "R9", "sitelinks": 5}])
+    assert before[:5] == after[:5]        # the top tier is untouched

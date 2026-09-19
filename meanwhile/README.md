@@ -49,7 +49,7 @@ prototype can load in place of its hand-written sample.
 | `build_db.py` | SQLite + FTS5 + indexes, coverage report, prototype JSON | Yes |
 
 ```bash
-python -m pytest tests/ -q      # 99 tests
+python -m pytest tests/ -q      # 108 tests
 ```
 
 ### extract.py is the stage the network shapes
@@ -77,7 +77,17 @@ there because WDQS refused the work some particular way:
   five-second retry.
 - **One failed request should cost one request.** The coordinate pass makes
   hundreds of them. Letting one raise discarded a two-hour extraction before
-  anything reached disk, which looks exactly like a run that did nothing.
+  anything reached disk, which looks exactly like a run that did nothing. A
+  batch that fails is halved, like a date window.
+- **One property per query.** Asking for three location properties at once —
+  three UNION branches, each joining through a statement node — failed on 288
+  batches out of 288, at 1000 items per batch and at 400. Asked one at a time
+  it is a single property path returning a WKT literal, and the second and
+  third passes only run over what the first could not place.
+- **Most notable first, and interruptible.** Coordinates are fetched in
+  notability tiers, so a pass stopped with Ctrl-C leaves a smaller database
+  rather than an arbitrary slice of one. Everything fetched is cached, so a
+  re-run picks up where it stopped.
 - **Class lists.** The `VALUES ?class { … }` sets in the polity and event
   queries are a first guess at how Wikidata types states and occurrences, which
   it does inconsistently. Check what comes back and adjust.

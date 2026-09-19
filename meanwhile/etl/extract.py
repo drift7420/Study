@@ -31,7 +31,14 @@ halve the window or count the attempt against the retry budget.
 
 *One failed batch should cost one batch.* The coordinate pass runs hundreds of
 requests; letting any one of them raise discarded a two-hour extraction before
-anything was written to disk. Every batch is now survivable on its own.
+anything was written to disk. Every batch is now survivable on its own, and a
+batch that fails is halved before it is given up on.
+
+*One property per query.* Asking for three location properties at once — three
+UNION branches, each joining through a statement node — failed on 288 batches
+out of 288, at 1000 items and at 400. Asked one property at a time it is a
+single cheap join, and the second and third passes only run over what the
+first could not place.
 
 Queries go by POST — a long query in a GET URL can be refused by the proxy
 in front of WDQS, which surfaces as a 502.
@@ -48,9 +55,12 @@ Usage:
 
 import argparse
 import gzip
+import hashlib
 import json
 import os
+import re
 import time
+from collections import deque
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -61,11 +71,13 @@ USER_AGENT = "MeanwhileETL/0.1 (https://github.com/drift7420/Study; contact: {co
 
 MIN_SITELINKS = {"person": 4, "polity": 3, "event": 4}
 
-# Coordinate lookups are cheap per item and expensive per request, and the
-# endpoint throttles on request count, not bytes. Bigger batches mean a quarter
-# as many round trips for the same work.
-COORD_BATCH = 1000
+# Coordinate lookups are cheap per item and expensive per request, so batches
+# want to be large — but a batch that is too large for WDQS today is halved
+# rather than abandoned, so this is a starting point, not a commitment.
+COORD_BATCH = 500
+MIN_COORD_BATCH = 25
 COORD_PAUSE = 2
+COORD_REPORT_EVERY = 5000
 
 # WDQS throttles a client that has been running for hours. A 429 says nothing
 # about the query, so it waits rather than retrying fast or giving up.
@@ -160,57 +172,43 @@ TEMPLATES = {"person": PERSON_QUERY, "polity": POLITY_QUERY, "event": EVENT_QUER
 # Place of birth alone lost a third of all people, and not evenly: Wikidata
 # records P19 far more consistently for Europeans than for, say, Ming-dynasty
 # officials, so requiring it quietly emptied whole regions. Each type now tries
-# several properties and keeps the most specific one that answers, ranked — a
-# country centroid is a poor location but a far better one than dropping the
-# person entirely.
-COORD_QUERIES = {
-    "person": """
-SELECT ?item ?lat ?lng ?rank WHERE {
-  VALUES ?item { %ITEMS% }
-  { ?item wdt:P19 ?place . ?place p:P625/psv:P625 ?cn . BIND(1 AS ?rank) }
-  UNION
-  { ?item wdt:P20 ?place . ?place p:P625/psv:P625 ?cn . BIND(2 AS ?rank) }
-  UNION
-  { ?item wdt:P27 ?place . ?place p:P625/psv:P625 ?cn . BIND(3 AS ?rank) }
-  ?cn wikibase:geoLatitude ?lat ; wikibase:geoLongitude ?lng .
-}
-""",
-    "polity": """
-SELECT ?item ?lat ?lng ?rank WHERE {
-  VALUES ?item { %ITEMS% }
-  { ?item wdt:P36 ?place . ?place p:P625/psv:P625 ?cn . BIND(1 AS ?rank) }
-  UNION
-  { ?item p:P625/psv:P625 ?cn . BIND(2 AS ?rank) }
-  UNION
-  { ?item wdt:P17 ?place . ?place p:P625/psv:P625 ?cn . BIND(3 AS ?rank) }
-  ?cn wikibase:geoLatitude ?lat ; wikibase:geoLongitude ?lng .
-}
-""",
-    "event": """
-SELECT ?item ?lat ?lng ?rank WHERE {
-  VALUES ?item { %ITEMS% }
-  { ?item p:P625/psv:P625 ?cn . BIND(1 AS ?rank) }
-  UNION
-  { ?item wdt:P276 ?place . ?place p:P625/psv:P625 ?cn . BIND(2 AS ?rank) }
-  UNION
-  { ?item wdt:P17 ?place . ?place p:P625/psv:P625 ?cn . BIND(3 AS ?rank) }
-  ?cn wikibase:geoLatitude ?lat ; wikibase:geoLongitude ?lng .
-}
-""",
+# several properties, most specific first — a country centroid is a poor
+# location but a far better one than dropping the person entirely.
+#
+# One property per query, not all three at once. The combined query (three
+# UNION branches, each joining to a statement node) timed out on every batch
+# we ever sent it. `wdt:P19/wdt:P625` is one property path returning a WKT
+# literal, with no statement node to join to and no union to evaluate.
+#
+# A None property means the item carries the coordinate itself.
+COORD_PROPERTIES = {
+    "person": [("P19", "birthplace"), ("P20", "death place"), ("P27", "country")],
+    "polity": [("P36", "capital"), (None, "own coordinates"), ("P17", "country")],
+    "event": [(None, "own coordinates"), ("P276", "location"), ("P17", "country")],
 }
 
-# How precisely each rank places the item. Worth carrying through to the
-# database: a country centroid can put someone in the wrong region entirely.
-COORD_SOURCE = {
-    "person": {1: "birthplace", 2: "death place", 3: "country"},
-    "polity": {1: "capital", 2: "own coordinates", 3: "country"},
-    "event": {1: "own coordinates", 2: "location", 3: "country"},
+COORD_QUERY = """
+SELECT ?item ?coord WHERE {
+  VALUES ?item { %ITEMS% }
+  ?item %PATH% ?coord .
 }
+"""
 
-# Bumped when the coordinate queries *or the batch size* change: batches are
-# named by index, so a different size means a cached batch no longer holds the
-# items its name claims.
-COORD_VERSION = 3
+# Wikidata returns coordinates as WKT, longitude first. Points on other globes
+# are prefixed with the globe's URI, and those we skip — a crater on Mars is
+# not a place in any region.
+POINT = re.compile(r"^Point\(\s*(-?[0-9.eE+-]+)\s+(-?[0-9.eE+-]+)\s*\)$")
+
+# Bumped when the coordinate queries, the property order, or the cache naming
+# change, so results from an older scheme are not reused.
+COORD_VERSION = 4
+
+# Coordinates are fetched most-notable-first, so that a run cut short still
+# places the entries most likely to be shown. Batches are cut within a tier,
+# not across the whole sorted list: adding one record shifts every batch after
+# it, and a shifted batch is a cache miss, so confining the churn to one tier
+# keeps the other three usable.
+NOTABILITY_TIERS = (50, 20, 10, 0)
 
 FIELD_MAP = {
     "person": {"birth": ("birth", "birthPrec"), "death": ("death", "deathPrec"),
@@ -368,9 +366,38 @@ def flatten(binding, type_):
     return record
 
 
-def best_coordinate(rows):
-    """Lowest rank wins — the most specific property that answered."""
-    return min(rows, key=lambda r: r[0])
+def parse_point(literal):
+    """WKT to (lat, lng). None for anything that isn't a plain Earth point."""
+    found = POINT.match(literal.strip())
+    if not found:
+        return None
+    lng, lat = float(found.group(1)), float(found.group(2))
+    if not (-90 <= lat <= 90 and -180 <= lng <= 180):
+        return None
+    return lat, lng
+
+
+def coord_query(via, batch):
+    path = "wdt:P625" if via is None else f"wdt:{via}/wdt:P625"
+    return (COORD_QUERY
+            .replace("%ITEMS%", " ".join(f"wd:{q}" for q in batch))
+            .replace("%PATH%", path))
+
+
+def by_notability(records):
+    """QIDs most-notable-first, in tiers. See NOTABILITY_TIERS."""
+    best = {}
+    for record in records:
+        qid = record.get("qid")
+        if qid:
+            best[qid] = max(best.get(qid, 0), int(record.get("sitelinks") or 0))
+
+    ordered, placed = [], set()
+    for floor in NOTABILITY_TIERS:
+        tier = sorted(q for q, n in best.items() if n >= floor and q not in placed)
+        ordered.extend(tier)
+        placed.update(tier)
+    return ordered
 
 
 def merge_coordinates(records, coordinates):
@@ -383,60 +410,112 @@ def merge_coordinates(records, coordinates):
     return records
 
 
-def fetch_coordinates(qids, type_, contact, cache_dir):
-    """Returns (coordinates, failed batch indices).
+def coord_cache_path(cache_dir, type_, via, batch):
+    """Named by what is in the batch, not where it sits in the list.
 
-    A batch that fails costs that batch and nothing else. It used to cost the
-    whole run: the exception propagated out of extract() before any records
-    were written, so a two-hour extraction ended with the raw file still
-    holding the *previous* run's output — which looks exactly like a run that
-    did nothing, and is much harder to notice.
+    Batches are slices of an ordered list, so one recovered window shifts every
+    boundary after it — and a cache entry named by index would then hold items
+    it is no longer being asked for. A digest of the contents can only ever
+    answer for the batch it was written from.
     """
-    coordinates, failed = {}, []
-    # The batch number alone is not a safe cache key: batches are slices of a
-    # sorted list, so recovering one failed window shifts every boundary and
-    # cached batches would no longer hold the items they are named for. Keying
-    # on the set size too means a changed set refetches rather than silently
-    # skipping the items that moved.
-    population = len(qids)
-    batches = list(batched(sorted(qids)))
-    for index, batch in enumerate(batches):
-        cached = cache_dir / f"v{COORD_VERSION}-{type_}-coords-{population}-{index}.json"
+    digest = hashlib.sha1(",".join(batch).encode()).hexdigest()[:16]
+    return cache_dir / f"v{COORD_VERSION}-{type_}-{via or 'self'}-{len(batch)}-{digest}.json"
+
+
+def fetch_by_property(qids, via, type_, contact, cache_dir):
+    """One property over many batches.
+
+    Returns (found, qids we couldn't ask about, interrupted). A batch that
+    fails is halved and both halves retried, for the same reason a date window
+    is: WDQS won't say what a query will cost, and its budget moves with load,
+    so a narrower question is the only useful reply to a refusal.
+
+    Ctrl-C stops the pass and keeps what it has. Items are asked about
+    most-notable-first, so stopping early is a reasonable thing to want: it
+    leaves a smaller database, not a broken one.
+    """
+    found, failed = {}, []
+    pending = deque(batched(qids))
+    # Progress is reported per N items rather than per batch: a pass over
+    # 660,000 people is 1,300 batches, and a resumed run answers most of them
+    # from cache in a second, which should not be 1,300 lines.
+    seen, next_report = 0, COORD_REPORT_EVERY
+
+    while pending:
+        batch = pending.popleft()
+        cached = coord_cache_path(cache_dir, type_, via, batch)
         if cached.exists():
-            # JSON has no tuples, so a cached batch would otherwise hand back
-            # lists where a fresh one hands back tuples.
-            coordinates.update({qid: tuple(found) for qid, found
-                                in json.loads(cached.read_text(encoding="utf-8")).items()})
+            found.update({qid: tuple(point) for qid, point
+                          in json.loads(cached.read_text(encoding="utf-8")).items()})
+            seen += len(batch)
+            if seen >= next_report:
+                print(f"    {seen}/{len(qids)} done, {len(found)} placed (cached)")
+                next_report = seen + COORD_REPORT_EVERY
             continue
 
-        values = " ".join(f"wd:{q}" for q in batch)
         try:
-            payload = run_query(COORD_QUERIES[type_].replace("%ITEMS%", values), contact)
+            payload = run_query(coord_query(via, batch), contact)
+        except KeyboardInterrupt:
+            print(f"    stopped after {seen} items — keeping what is placed")
+            return found, failed, True
         except Exception as exc:                       # noqa: BLE001
-            # Not cached, so a re-run retries exactly these items.
-            print(f"  coords {index + 1}/{len(batches)}: FAILED ({exc})")
-            failed.append(index)
-            time.sleep(COORD_PAUSE)
+            if len(batch) > MIN_COORD_BATCH:
+                middle = len(batch) // 2
+                pending.appendleft(batch[middle:])
+                pending.appendleft(batch[:middle])
+                print(f"    batch of {len(batch)} failed, halving ({exc})")
+            else:
+                print(f"    batch of {len(batch)} FAILED ({exc})")
+                failed.extend(batch)
+                seen += len(batch)
             continue
 
-        candidates = {}
+        located = {}
         for binding in payload["results"]["bindings"]:
-            qid = cell(binding, "item").rsplit("/", 1)[-1]
-            rank = int(cell(binding, "rank") or 9)
-            candidates.setdefault(qid, []).append(
-                (rank, float(cell(binding, "lat")), float(cell(binding, "lng"))))
+            point = parse_point(cell(binding, "coord") or "")
+            if point:
+                located[cell(binding, "item").rsplit("/", 1)[-1]] = point
 
-        found = {}
-        for qid, rows in candidates.items():
-            rank, lat, lng = best_coordinate(rows)
-            found[qid] = (lat, lng, COORD_SOURCE[type_].get(rank, "unknown"))
-
-        cached.write_text(json.dumps(found), encoding="utf-8")
-        exact = sum(1 for v in found.values() if v[2] != "country")
-        print(f"  coords {index + 1}/{len(batches)}: {len(found)}/{len(batch)} located "
-              f"({exact} precisely)")
-        coordinates.update(found)
+        cached.write_text(json.dumps(located), encoding="utf-8")
+        found.update(located)
+        seen += len(batch)
+        if seen >= next_report:
+            print(f"    {seen}/{len(qids)} done, {len(found)} placed")
+            next_report = seen + COORD_REPORT_EVERY
         time.sleep(COORD_PAUSE)
+
+    return found, failed, False
+
+
+def fetch_coordinates(qids, type_, contact, cache_dir):
+    """Place items by the most specific property that answers.
+
+    Returns (coordinates, qids that couldn't be asked about). A batch that
+    fails costs that batch and nothing else. It used to cost the whole run: the
+    exception propagated out of extract() before any records were written, so a
+    two-hour extraction ended with the raw file still holding the *previous*
+    run's output — which looks exactly like a run that did nothing, and is much
+    harder to notice.
+    """
+    coordinates, failed = {}, set()
+    remaining = list(qids)
+
+    for via, source in COORD_PROPERTIES[type_]:
+        if not remaining:
+            break
+        print(f"  by {source}: {len(remaining)} to place")
+        found, could_not_ask, interrupted = fetch_by_property(
+            remaining, via, type_, contact, cache_dir)
+        for qid, (lat, lng) in found.items():
+            coordinates[qid] = (lat, lng, source)
+        failed.update(could_not_ask)
+        # Whatever this property couldn't place falls through to the next one,
+        # including the batches that failed outright.
+        remaining = [q for q in remaining if q not in coordinates]
+        if interrupted:
+            break
+
+    failed &= set(remaining)
     return coordinates, failed
 
 
@@ -512,15 +591,15 @@ def extract(type_, cache_dir, contact):
             print(f"    {label}")
         print("  Re-run to retry only these; everything else is cached.\n")
 
-    print(f"  looking up coordinates for {len(records)} records…")
-    coordinates, coord_failed = fetch_coordinates(
-        {r["qid"] for r in records if r["qid"]}, type_, contact, cache_dir)
+    ordered = by_notability(records)
+    print(f"  looking up coordinates for {len(ordered)} items…")
+    coordinates, coord_failed = fetch_coordinates(ordered, type_, contact, cache_dir)
     merge_coordinates(records, coordinates)
     located = sum(1 for r in records if r["lat"] is not None)
-    print(f"  {located}/{len(records)} have coordinates")
+    print(f"  {located}/{len(records)} records have coordinates")
     if coord_failed:
-        print(f"  {len(coord_failed)} coordinate batch(es) failed and were not "
-              f"cached — re-run to fetch only those.")
+        print(f"  {len(coord_failed)} item(s) could not be asked about at all — "
+              f"nothing was cached for them, so a re-run retries exactly those.")
     return records
 
 

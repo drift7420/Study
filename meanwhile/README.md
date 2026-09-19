@@ -47,9 +47,10 @@ prototype can load in place of its hand-written sample.
 | `regions.py` | Coordinates to one of 22 regions | Yes |
 | `transform.py` | Raw records to rows: spans, confidence, thresholds | Yes |
 | `build_db.py` | SQLite + FTS5 + indexes, coverage report, prototype JSON | Yes |
+| `thresholds.py` | What each notability cutoff would admit, per region | Yes |
 
 ```bash
-python -m pytest tests/ -q      # 108 tests
+python -m pytest tests/ -q      # 114 tests
 ```
 
 ### extract.py is the stage the network shapes
@@ -109,7 +110,17 @@ would quietly delete exactly the thin-coverage regions the app exists to show.
 **Thresholds relax by region.** Sitelink counts measure who writes Wikipedia,
 so one global cutoff empties sub-Saharan Africa and pre-Columbian America while
 keeping European minor nobility. `RELAXED_REGIONS` in `transform.py` lowers the
-bar where a flat cutoff would misrepresent the world.
+bar where a flat cutoff would misrepresent the world. The multipliers in it
+were guesses; `thresholds.py` prints the numbers they should be chosen from.
+
+**The coordinate fallback did not close the coverage gap.** Requiring place of
+birth was dropping a third of all people, and the guess was that it was doing
+so unevenly enough to explain East Asia's thinness. Falling back to place of
+death and country raised the placement rate from 66% to 95% and added 33,000
+entries — but it raised every region by about the same third, so Western
+Europe : East Asia for 1500-1999 moved from 30.9:1 to only 30.5:1. Europe is
+still 65% of that era and East Asia 1.2%. Whatever is emptying East Asia, it
+is not the coordinates, and the next place to look is the sitelink cutoff.
 
 **Region boxes are ordered.** First match wins, so the list runs specific to
 general: East Asia before Southeast Asia or Guangzhou lands in the wrong one;

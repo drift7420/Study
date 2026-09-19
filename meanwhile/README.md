@@ -42,28 +42,42 @@ prototype can load in place of its hand-written sample.
 
 | File | Does | Tested |
 |---|---|---|
-| `extract.py` | SPARQL against WDQS, cached per chunk, resumable | **No — see below** |
+| `extract.py` | SPARQL against WDQS, cached per chunk, resumable | Everything but the network |
 | `dates.py` | Wikidata time values to astronomical years and intervals | Yes |
 | `regions.py` | Coordinates to one of 22 regions | Yes |
 | `transform.py` | Raw records to rows: spans, confidence, thresholds | Yes |
 | `build_db.py` | SQLite + FTS5 + indexes, coverage report, prototype JSON | Yes |
 
 ```bash
-python -m pytest tests/ -q      # 59 tests
+python -m pytest tests/ -q      # 99 tests
 ```
 
-### extract.py is the untested stage
+### extract.py is the stage the network shapes
 
-It was written in an environment whose network policy blocks
-`query.wikidata.org`, so it has never been run. Everything downstream of it is
-covered by tests against fixtures shaped like real WDQS output. Expect to tune
-it on first use:
+It was written where `query.wikidata.org` is blocked, so its queries could not
+be tried until it ran on a real machine. The windowing, subdivision, batching
+and shaping are tested; the SPARQL is not, and every constant in the file is
+there because WDQS refused the work some particular way:
 
-- **Timeouts.** WDQS cuts queries off at 60 seconds. `BUCKETS` splits the work
-  by sitelink count; if a bucket times out, split it further rather than
-  retrying it unchanged.
-- **User agent.** WDQS blocks anonymous clients, which is why `--contact` is
-  required.
+- **Lead with the date filter.** Starting from `?item wdt:P31 wd:Q5` scans every
+  human before anything narrows it, and the optimiser will not reliably push a
+  sitelink filter ahead of that. A 502 is what that looks like.
+- **Range comparisons, never `YEAR()`.** A function call cannot use the date
+  index. The BCE window carries only an upper bound, which covers everything
+  before year 1 without negative date literals.
+- **Ask for gzip.** The densest windows return 40MB+ of JSON, and those were
+  the ones that arrived truncated — a JSON parse error tens of thousands of
+  lines in, not a network error.
+- **Halve a window that fails, and remember it.** There is no way to ask what a
+  query will cost, and the budget moves with load, so the answer to a failure
+  is a narrower window. A window that split leaves a `.split` marker, so later
+  runs skip straight to the halves.
+- **A 429 is not a query that is too big.** It means we asked too fast. Waiting
+  out `Retry-After` is the fix; splitting the window is not, and neither is a
+  five-second retry.
+- **One failed request should cost one request.** The coordinate pass makes
+  hundreds of them. Letting one raise discarded a two-hour extraction before
+  anything reached disk, which looks exactly like a run that did nothing.
 - **Class lists.** The `VALUES ?class { … }` sets in the polity and event
   queries are a first guess at how Wikidata types states and occurrences, which
   it does inconsistently. Check what comes back and adjust.

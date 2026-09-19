@@ -19,9 +19,19 @@ exactly the ones that arrived truncated — surfacing as a JSON parse error
 tens of thousands of lines in, not as a network error. Compressed they are a
 few MB, and a truncated one now fails cleanly at decompression.
 
-*Halve a window that fails.* WDQS offers no way to ask what a query will cost,
-and its budget moves with load, so the useful response to a failure is a
-narrower window rather than another identical attempt.
+*Halve a window that fails, once.* WDQS offers no way to ask what a query
+will cost, and its budget moves with load, so the useful response to a failure
+is a narrower window rather than another identical attempt. A window that had
+to split leaves a marker behind, so the next run goes straight to the halves
+instead of spending three retries rediscovering that the whole is too big.
+
+*A 429 is not a query that is too big.* It means we asked too fast, and the
+answer is to wait — for as long as Retry-After says, or a minute — not to
+halve the window or count the attempt against the retry budget.
+
+*One failed batch should cost one batch.* The coordinate pass runs hundreds of
+requests; letting any one of them raise discarded a two-hour extraction before
+anything was written to disk. Every batch is now survivable on its own.
 
 Queries go by POST — a long query in a GET URL can be refused by the proxy
 in front of WDQS, which surfaces as a 502.
@@ -41,6 +51,7 @@ import gzip
 import json
 import os
 import time
+import urllib.error
 import urllib.parse
 import urllib.request
 from pathlib import Path
@@ -49,7 +60,18 @@ ENDPOINT = "https://query.wikidata.org/sparql"
 USER_AGENT = "MeanwhileETL/0.1 (https://github.com/drift7420/Study; contact: {contact})"
 
 MIN_SITELINKS = {"person": 4, "polity": 3, "event": 4}
-COORD_BATCH = 400
+
+# Coordinate lookups are cheap per item and expensive per request, and the
+# endpoint throttles on request count, not bytes. Bigger batches mean a quarter
+# as many round trips for the same work.
+COORD_BATCH = 1000
+COORD_PAUSE = 2
+
+# WDQS throttles a client that has been running for hours. A 429 says nothing
+# about the query, so it waits rather than retrying fast or giving up.
+MAX_THROTTLE_WAITS = 4
+THROTTLE_PAUSE = 60          # when the response doesn't say how long to wait
+MAX_THROTTLE_PAUSE = 300     # ...and a ceiling on what it asks for
 
 PROBE = "SELECT ?x WHERE { BIND(1 AS ?x) }"
 
@@ -185,9 +207,10 @@ COORD_SOURCE = {
     "event": {1: "own coordinates", 2: "location", 3: "country"},
 }
 
-# Bumped when the coordinate queries change, so cached batches from an older
-# query are not reused.
-COORD_VERSION = 2
+# Bumped when the coordinate queries *or the batch size* change: batches are
+# named by index, so a different size means a cached batch no longer holds the
+# items its name claims.
+COORD_VERSION = 3
 
 FIELD_MAP = {
     "person": {"birth": ("birth", "birthPrec"), "death": ("death", "deathPrec"),
@@ -244,9 +267,29 @@ def planned_chunks(type_):
     return out
 
 
-def batched(items, size=COORD_BATCH):
+def batched(items, size=None):
+    size = size or COORD_BATCH
     for i in range(0, len(items), size):
         yield items[i:i + size]
+
+
+class Throttled(Exception):
+    """WDQS refused because we asked too often, not because the query is too
+    big. Splitting the window in response would be the wrong fix, and would
+    quietly shred the cache into fragments that were never too large."""
+
+
+def retry_after(error, fallback=THROTTLE_PAUSE):
+    """Seconds to wait, from a 429's Retry-After header when it carries one.
+
+    The header may also be an HTTP date; we don't parse those, we just wait
+    the default, which is the right order of magnitude either way.
+    """
+    value = (getattr(error, "headers", None) or {}).get("Retry-After")
+    try:
+        return min(max(int(value), 1), MAX_THROTTLE_PAUSE)
+    except (TypeError, ValueError):
+        return fallback
 
 
 def run_query(sparql, contact, retries=4):
@@ -265,7 +308,8 @@ def run_query(sparql, contact, retries=4):
         "Content-Type": "application/x-www-form-urlencoded",
     })
     delay = 5
-    for attempt in range(retries):
+    attempts = throttles = 0
+    while True:
         try:
             with urllib.request.urlopen(request, timeout=300) as response:
                 payload = response.read()
@@ -273,12 +317,24 @@ def run_query(sparql, contact, retries=4):
                     payload = gzip.decompress(payload)
                 return json.loads(payload.decode())
         except Exception as exc:                       # noqa: BLE001 - report and back off
-            if attempt == retries - 1:
+            if isinstance(exc, urllib.error.HTTPError) and exc.code == 429:
+                # Throttling is about our rate, not this query, so it neither
+                # spends the retry budget nor justifies a five-second retry.
+                throttles += 1
+                if throttles > MAX_THROTTLE_WAITS:
+                    raise Throttled(
+                        f"throttled {MAX_THROTTLE_WAITS} times running") from exc
+                pause = retry_after(exc)
+                print(f"    throttled ({throttles}/{MAX_THROTTLE_WAITS}), "
+                      f"waiting {pause}s")
+                time.sleep(pause)
+                continue
+            attempts += 1
+            if attempts >= retries:
                 raise
-            print(f"    retry {attempt + 1} after {delay}s ({exc})")
+            print(f"    retry {attempts} after {delay}s ({exc})")
             time.sleep(delay)
             delay *= 2
-    return None
 
 
 def cell(binding, key):
@@ -328,7 +384,15 @@ def merge_coordinates(records, coordinates):
 
 
 def fetch_coordinates(qids, type_, contact, cache_dir):
-    coordinates = {}
+    """Returns (coordinates, failed batch indices).
+
+    A batch that fails costs that batch and nothing else. It used to cost the
+    whole run: the exception propagated out of extract() before any records
+    were written, so a two-hour extraction ended with the raw file still
+    holding the *previous* run's output — which looks exactly like a run that
+    did nothing, and is much harder to notice.
+    """
+    coordinates, failed = {}, []
     # The batch number alone is not a safe cache key: batches are slices of a
     # sorted list, so recovering one failed window shifts every boundary and
     # cached batches would no longer hold the items they are named for. Keying
@@ -339,11 +403,21 @@ def fetch_coordinates(qids, type_, contact, cache_dir):
     for index, batch in enumerate(batches):
         cached = cache_dir / f"v{COORD_VERSION}-{type_}-coords-{population}-{index}.json"
         if cached.exists():
-            coordinates.update(json.loads(cached.read_text(encoding="utf-8")))
+            # JSON has no tuples, so a cached batch would otherwise hand back
+            # lists where a fresh one hands back tuples.
+            coordinates.update({qid: tuple(found) for qid, found
+                                in json.loads(cached.read_text(encoding="utf-8")).items()})
             continue
 
         values = " ".join(f"wd:{q}" for q in batch)
-        payload = run_query(COORD_QUERIES[type_].replace("%ITEMS%", values), contact)
+        try:
+            payload = run_query(COORD_QUERIES[type_].replace("%ITEMS%", values), contact)
+        except Exception as exc:                       # noqa: BLE001
+            # Not cached, so a re-run retries exactly these items.
+            print(f"  coords {index + 1}/{len(batches)}: FAILED ({exc})")
+            failed.append(index)
+            time.sleep(COORD_PAUSE)
+            continue
 
         candidates = {}
         for binding in payload["results"]["bindings"]:
@@ -362,38 +436,57 @@ def fetch_coordinates(qids, type_, contact, cache_dir):
         print(f"  coords {index + 1}/{len(batches)}: {len(found)}/{len(batch)} located "
               f"({exact} precisely)")
         coordinates.update(found)
-        time.sleep(1)
-    return coordinates
+        time.sleep(COORD_PAUSE)
+    return coordinates, failed
+
+
+def _fetch_halves(halves, type_, driver, contact, cache_dir, depth):
+    rows, failed = [], []
+    for half_low, half_high in halves:
+        half_rows, half_failed = fetch_chunk(
+            f"{type_}-{driver}-{half_low}-{half_high}", type_, driver,
+            half_low, half_high, contact, cache_dir, depth + 1)
+        rows.extend(half_rows)
+        failed.extend(half_failed)
+    return rows, failed
 
 
 def fetch_chunk(label, type_, driver, low, high, contact, cache_dir, depth=0):
     """Run one window, halving it and retrying if WDQS won't deliver it whole.
 
     The windows that failed were the densest ones, so the useful response to a
-    failure is a narrower window rather than another identical attempt.
+    failure is a narrower window rather than another identical attempt. Only
+    the halves get cached, though, so every later run rediscovered that the
+    whole was too big — three retries and thirty-five seconds each, which is
+    expensive when the endpoint is already throttling us. A window that split
+    leaves a marker saying so.
     """
     cached = cache_dir / f"{label}.json"
     if cached.exists():
         return json.loads(cached.read_text(encoding="utf-8")), []
 
     indent = "    " * depth
+    halves = split_window(low, high)
+    marker = cache_dir / f"{label}.split"
+    if halves and marker.exists():
+        print(f"  {indent}{label}: known too big, straight to halves")
+        return _fetch_halves(halves, type_, driver, contact, cache_dir, depth)
+
     print(f"  {indent}{label}: querying…")
     try:
         payload = run_query(main_query(type_, driver, low, high), contact)
+    except Throttled as exc:
+        # Nothing to learn about the window's size from being throttled, so
+        # no marker and no split — just leave it for the next run.
+        print(f"  {indent}{label}: FAILED, {exc}")
+        return [], [label]
     except Exception as exc:                           # noqa: BLE001
-        halves = split_window(low, high)
         if not halves:
             print(f"  {indent}{label}: FAILED, cannot split further ({exc})")
             return [], [label]
         print(f"  {indent}{label}: splitting ({exc})")
-        rows, failed = [], []
-        for half_low, half_high in halves:
-            half_rows, half_failed = fetch_chunk(
-                f"{type_}-{driver}-{half_low}-{half_high}", type_, driver,
-                half_low, half_high, contact, cache_dir, depth + 1)
-            rows.extend(half_rows)
-            failed.extend(half_failed)
-        return rows, failed
+        marker.write_text("too big to fetch whole\n", encoding="utf-8")
+        return _fetch_halves(halves, type_, driver, contact, cache_dir, depth)
 
     rows = [flatten(b, type_) for b in payload["results"]["bindings"]]
     cached.write_text(json.dumps(rows), encoding="utf-8")
@@ -420,11 +513,14 @@ def extract(type_, cache_dir, contact):
         print("  Re-run to retry only these; everything else is cached.\n")
 
     print(f"  looking up coordinates for {len(records)} records…")
-    coordinates = fetch_coordinates({r["qid"] for r in records if r["qid"]},
-                                    type_, contact, cache_dir)
+    coordinates, coord_failed = fetch_coordinates(
+        {r["qid"] for r in records if r["qid"]}, type_, contact, cache_dir)
     merge_coordinates(records, coordinates)
     located = sum(1 for r in records if r["lat"] is not None)
     print(f"  {located}/{len(records)} have coordinates")
+    if coord_failed:
+        print(f"  {len(coord_failed)} coordinate batch(es) failed and were not "
+              f"cached — re-run to fetch only those.")
     return records
 
 

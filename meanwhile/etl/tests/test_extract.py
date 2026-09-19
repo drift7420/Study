@@ -6,9 +6,12 @@ are where a bug costs a half-hour run.
 """
 
 import sys
+import urllib.error
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+import pytest
 
 import extract
 import transform as tf
@@ -214,3 +217,177 @@ def test_an_unplaced_record_reports_unknown_rather_than_crashing():
                         "birth": {"time": "+1500-01-01T00:00:00Z", "precision": 9}},
                        tf.PERSON)
     assert row.location_source == "unknown"
+
+
+# ---------- throttling ----------
+
+def http_error(code, headers=None):
+    return urllib.error.HTTPError("https://query.wikidata.org/sparql", code,
+                                  "refused", headers or {}, None)
+
+
+def test_retry_after_is_honoured():
+    assert extract.retry_after(http_error(429, {"Retry-After": "90"})) == 90
+
+
+def test_a_missing_retry_after_waits_a_minute_not_five_seconds():
+    """The old backoff was 5/10/20s, which is nothing to a throttle that lasts
+    minutes — we just burned the retry budget and failed."""
+    assert extract.retry_after(http_error(429)) == extract.THROTTLE_PAUSE
+    assert extract.THROTTLE_PAUSE >= 60
+
+
+def test_an_http_date_retry_after_falls_back_rather_than_crashing():
+    header = {"Retry-After": "Wed, 21 Oct 2026 07:28:00 GMT"}
+    assert extract.retry_after(http_error(429, header)) == extract.THROTTLE_PAUSE
+
+
+def test_an_absurd_retry_after_is_capped():
+    assert extract.retry_after(http_error(429, {"Retry-After": "100000"})) \
+        == extract.MAX_THROTTLE_PAUSE
+
+
+def refuse_with(monkeypatch, error, slept):
+    calls = []
+
+    def urlopen(request, timeout=None):
+        calls.append(request)
+        raise error
+
+    monkeypatch.setattr(extract.urllib.request, "urlopen", urlopen)
+    monkeypatch.setattr(extract.time, "sleep", slept.append)
+    return calls
+
+
+def test_a_429_waits_it_out_without_spending_the_retry_budget(monkeypatch):
+    slept = []
+    calls = refuse_with(monkeypatch, http_error(429, {"Retry-After": "1"}), slept)
+    with pytest.raises(extract.Throttled):
+        extract.run_query("SELECT 1", "me@example.com", retries=2)
+    assert len(calls) == extract.MAX_THROTTLE_WAITS + 1     # not `retries`
+    assert slept == [1] * extract.MAX_THROTTLE_WAITS
+
+
+def test_an_ordinary_failure_still_gives_up_after_its_retries(monkeypatch):
+    slept = []
+    calls = refuse_with(monkeypatch, http_error(504), slept)
+    with pytest.raises(urllib.error.HTTPError):
+        extract.run_query("SELECT 1", "me@example.com", retries=3)
+    assert len(calls) == 3
+    assert slept == [5, 10]
+
+
+# ---------- remembering a window that had to split ----------
+
+def only_halves_answer(asked, too_big=('>= "1800-01-01', '< "1900-01-01')):
+    def fake(sparql, contact, retries=4):
+        asked.append(sparql)
+        if all(fragment in sparql for fragment in too_big):
+            raise RuntimeError("504 Gateway Timeout")
+        return {"results": {"bindings": []}}
+    return fake
+
+
+def test_a_window_that_split_is_not_attempted_whole_again(tmp_path, monkeypatch):
+    """Re-running used to spend three retries — about thirty-five seconds —
+    per known-too-big window before falling back to its cached halves."""
+    asked = []
+    monkeypatch.setattr(extract, "run_query", only_halves_answer(asked))
+    monkeypatch.setattr(extract.time, "sleep", lambda _: None)
+
+    args = ("person-P569-1800-1900", "person", "P569", 1800, 1900, "c", tmp_path)
+    extract.fetch_chunk(*args)
+    assert len(asked) == 3                      # the whole, then both halves
+    assert (tmp_path / "person-P569-1800-1900.split").exists()
+
+    asked.clear()
+    rows, failed = extract.fetch_chunk(*args)
+    assert asked == []                          # halves cached, whole not retried
+    assert (rows, failed) == ([], [])
+
+
+def test_the_marker_still_sends_us_to_the_halves_when_they_are_not_cached(tmp_path, monkeypatch):
+    asked = []
+    monkeypatch.setattr(extract, "run_query", only_halves_answer(asked))
+    monkeypatch.setattr(extract.time, "sleep", lambda _: None)
+
+    args = ("person-P569-1800-1900", "person", "P569", 1800, 1900, "c", tmp_path)
+    extract.fetch_chunk(*args)
+    for half in tmp_path.glob("*-18*.json"):
+        half.unlink()
+
+    asked.clear()
+    extract.fetch_chunk(*args)
+    assert len(asked) == 2                      # both halves, never the whole
+
+
+def test_throttling_does_not_get_mistaken_for_a_window_being_too_big(tmp_path, monkeypatch):
+    """Splitting on a 429 would shred the cache into fragments that were never
+    too large, and quadruple the request count while we are being throttled."""
+    def throttled(sparql, contact, retries=4):
+        raise extract.Throttled("throttled 4 times running")
+    monkeypatch.setattr(extract, "run_query", throttled)
+
+    rows, failed = extract.fetch_chunk("person-P569-1800-1900", "person", "P569",
+                                       1800, 1900, "c", tmp_path)
+    assert (rows, failed) == ([], ["person-P569-1800-1900"])
+    assert list(tmp_path.glob("*.split")) == []
+    assert list(tmp_path.glob("*.json")) == []  # nothing cached, so a re-run retries
+
+
+# ---------- a failed coordinate batch ----------
+
+def coord_binding(qid, lat, lng, rank):
+    return binding(item=f"http://www.wikidata.org/entity/{qid}",
+                   lat=str(lat), lng=str(lng), rank=str(rank))
+
+
+def test_a_failed_coordinate_batch_costs_one_batch_not_the_whole_run(tmp_path, monkeypatch):
+    """This is the bug that made a two-hour run produce nothing: the exception
+    escaped extract(), so the raw file was never rewritten and the build read
+    the previous run's records — indistinguishable from a run that did nothing."""
+    monkeypatch.setattr(extract, "COORD_BATCH", 2)
+    monkeypatch.setattr(extract.time, "sleep", lambda _: None)
+
+    def fake(sparql, contact, retries=4):
+        if "wd:Q1 " in sparql:
+            raise urllib.error.HTTPError("u", 502, "Bad Gateway", {}, None)
+        return {"results": {"bindings": [coord_binding("Q3", 30.6, 114.3, 1)]}}
+
+    monkeypatch.setattr(extract, "run_query", fake)
+    coordinates, failed = extract.fetch_coordinates(
+        {"Q1", "Q2", "Q3", "Q4"}, "person", "c", tmp_path)
+
+    assert coordinates == {"Q3": (30.6, 114.3, "birthplace")}
+    assert failed == [0]
+
+
+def test_a_failed_batch_is_not_cached_so_a_re_run_retries_it(tmp_path, monkeypatch):
+    monkeypatch.setattr(extract, "COORD_BATCH", 2)
+    monkeypatch.setattr(extract.time, "sleep", lambda _: None)
+
+    attempts = []
+
+    def fake(sparql, contact, retries=4):
+        attempts.append(sparql)
+        if "wd:Q1 " in sparql and len(attempts) == 1:
+            raise RuntimeError("502 Bad Gateway")
+        return {"results": {"bindings": [coord_binding("Q1", 41.9, 12.5, 2)]}}
+
+    monkeypatch.setattr(extract, "run_query", fake)
+    qids = {"Q1", "Q2", "Q3", "Q4"}
+    extract.fetch_coordinates(qids, "person", "c", tmp_path)
+    coordinates, failed = extract.fetch_coordinates(qids, "person", "c", tmp_path)
+
+    assert failed == []
+    assert coordinates["Q1"] == (41.9, 12.5, "death place")
+
+
+def test_the_coordinate_cache_key_changes_with_the_batch_size(tmp_path, monkeypatch):
+    """Batches are named by index, so 1000-item batches must not read caches
+    written when they held 400."""
+    monkeypatch.setattr(extract.time, "sleep", lambda _: None)
+    monkeypatch.setattr(extract, "run_query",
+                        lambda *a, **k: {"results": {"bindings": []}})
+    extract.fetch_coordinates({"Q1"}, "person", "c", tmp_path)
+    assert (tmp_path / f"v{extract.COORD_VERSION}-person-coords-1-0.json").exists()

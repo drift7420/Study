@@ -55,6 +55,7 @@ class Row:
     date_confidence: str
     region_id: int
     region_confidence: str
+    location_source: str
     notability: int
     wiki_title: str | None
     lat: float | None
@@ -158,6 +159,7 @@ def build_row(rec, type_, thresholds=None) -> Row | None:
         date_confidence=date_confidence,
         region_id=region_id,
         region_confidence=region_confidence,
+        location_source=rec.get("location_source") or "unknown",
         notability=notability,
         wiki_title=rec.get("wiki_title") or None,
         lat=rec.get("lat"),

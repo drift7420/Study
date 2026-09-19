@@ -41,6 +41,9 @@ CREATE TABLE entries (
   active_end       INTEGER NOT NULL,
   date_confidence  TEXT NOT NULL,
   region_id        INTEGER NOT NULL REFERENCES regions(id),
+  -- Which property placed this entry. A country centroid is a real location
+  -- but a coarse one, and the app may want to say so.
+  location_source  TEXT NOT NULL DEFAULT 'unknown',
   notability       INTEGER NOT NULL DEFAULT 0,
   wiki_title       TEXT,
   lat              REAL,
@@ -95,11 +98,13 @@ def build(rows, out_path):
         INSERT INTO entries
           (qid, name, type, description, birth_year, birth_precision,
            death_year, death_precision, active_start, active_end,
-           date_confidence, region_id, notability, wiki_title, lat, lng)
-        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+           date_confidence, region_id, location_source, notability,
+           wiki_title, lat, lng)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
     """, [(r.qid, r.name, r.type, r.description, r.birth_year, r.birth_precision,
            r.death_year, r.death_precision, r.active_start, r.active_end,
-           r.date_confidence, r.region_id, r.notability, r.wiki_title, r.lat, r.lng)
+           r.date_confidence, r.region_id, r.location_source, r.notability,
+           r.wiki_title, r.lat, r.lng)
           for r in rows])
 
     connection.commit()
@@ -110,16 +115,18 @@ def build(rows, out_path):
 
 def report(rows):
     """Print what the dataset actually looks like — the point of the whole run."""
-    by_type, by_confidence, by_region_confidence = {}, {}, {}
+    by_type, by_confidence, by_region_confidence, by_location = {}, {}, {}, {}
     for row in rows:
         by_type[row.type] = by_type.get(row.type, 0) + 1
         by_confidence[row.date_confidence] = by_confidence.get(row.date_confidence, 0) + 1
         by_region_confidence[row.region_confidence] = by_region_confidence.get(row.region_confidence, 0) + 1
+        by_location[row.location_source] = by_location.get(row.location_source, 0) + 1
 
     print(f"\n{len(rows)} entries")
     print("  by type:  " + ", ".join(f"{k} {v}" for k, v in sorted(by_type.items())))
     print("  dates:    " + ", ".join(f"{k} {v}" for k, v in sorted(by_confidence.items())))
     print("  regions:  " + ", ".join(f"{k} {v}" for k, v in sorted(by_region_confidence.items())))
+    print("  placed by:" + ", ".join(f" {k} {v}" for k, v in sorted(by_location.items())))
 
     table = tf.coverage(rows)
     buckets = sorted({bucket for _, bucket in table})

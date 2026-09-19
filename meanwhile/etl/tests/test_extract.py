@@ -144,7 +144,7 @@ def test_flatten_produces_what_transform_consumes():
     assert row["birth"] == {"time": "1643-01-04T00:00:00Z", "precision": 11}
     assert row["wiki_title"] is None          # title matches the label
 
-    extract.merge_coordinates([row], {"Q935": (52.8, -0.6)})
+    extract.merge_coordinates([row], {"Q935": (52.8, -0.6, "birthplace")})
     built = tf.build_row(row, tf.PERSON)
     assert built is not None
     assert (built.active_start, built.active_end) == (1643, 1727)
@@ -168,10 +168,49 @@ def test_flatten_survives_missing_optionals():
 
 
 def test_an_item_the_coordinate_pass_missed_is_left_alone():
-    records = [{"qid": "Q1", "lat": None, "lng": None},
-               {"qid": "Q2", "lat": None, "lng": None}]
-    extract.merge_coordinates(records, {"Q1": (41.9, 12.5)})
+    records = [{"qid": "Q1", "lat": None, "lng": None, "location_source": None},
+               {"qid": "Q2", "lat": None, "lng": None, "location_source": None}]
+    extract.merge_coordinates(records, {"Q1": (41.9, 12.5, "birthplace")})
     assert records[0]["lat"] == 41.9
     assert records[1]["lat"] is None
     # No region, so transform drops it rather than inventing one.
     assert tf.build_row({**records[1], "name": "x", "sitelinks": 50}, tf.PERSON) is None
+
+
+# ---------- coordinate fallback ----------
+
+def test_the_most_specific_coordinate_wins():
+    """Birthplace beats place of death beats country: all three are real
+    locations, but a country centroid can land someone in the wrong region."""
+    rows = [(3, 35.0, 105.0), (1, 30.6, 114.3), (2, 39.9, 116.4)]
+    assert extract.best_coordinate(rows) == (1, 30.6, 114.3)
+
+
+def test_a_country_centroid_is_kept_when_it_is_all_there_is():
+    assert extract.best_coordinate([(3, 35.0, 105.0)]) == (3, 35.0, 105.0)
+
+
+def test_every_type_ranks_its_sources():
+    for type_ in ("person", "polity", "event"):
+        query = extract.COORD_QUERIES[type_]
+        labels = extract.COORD_SOURCE[type_]
+        for rank in labels:
+            assert f"BIND({rank} AS ?rank)" in query, f"{type_} rank {rank} unranked"
+        assert set(labels) == {1, 2, 3}
+
+
+def test_merge_records_the_source_alongside_the_coordinate():
+    records = [{"qid": "Q1", "lat": None, "lng": None, "location_source": None}]
+    extract.merge_coordinates(records, {"Q1": (30.6, 114.3, "country")})
+    assert records[0]["location_source"] == "country"
+    built = tf.build_row({**records[0], "name": "X", "sitelinks": 50,
+                          "birth": {"time": "+1500-01-01T00:00:00Z", "precision": 9}},
+                         tf.PERSON)
+    assert built.location_source == "country"
+
+
+def test_an_unplaced_record_reports_unknown_rather_than_crashing():
+    row = tf.build_row({"qid": "Q2", "name": "X", "sitelinks": 50, "lat": 41.9, "lng": 12.5,
+                        "birth": {"time": "+1500-01-01T00:00:00Z", "precision": 9}},
+                       tf.PERSON)
+    assert row.location_source == "unknown"

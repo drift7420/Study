@@ -133,35 +133,61 @@ WHERE {
 
 TEMPLATES = {"person": PERSON_QUERY, "polity": POLITY_QUERY, "event": EVENT_QUERY}
 
-# Second pass: coordinates only, keyed by QID. Each type reaches its location
-# by a different property.
+# Second pass: coordinates only, keyed by QID.
+#
+# Place of birth alone lost a third of all people, and not evenly: Wikidata
+# records P19 far more consistently for Europeans than for, say, Ming-dynasty
+# officials, so requiring it quietly emptied whole regions. Each type now tries
+# several properties and keeps the most specific one that answers, ranked — a
+# country centroid is a poor location but a far better one than dropping the
+# person entirely.
 COORD_QUERIES = {
     "person": """
-SELECT ?item ?lat ?lng WHERE {
+SELECT ?item ?lat ?lng ?rank WHERE {
   VALUES ?item { %ITEMS% }
-  ?item wdt:P19 ?place .
-  ?place p:P625/psv:P625 ?cn .
+  { ?item wdt:P19 ?place . ?place p:P625/psv:P625 ?cn . BIND(1 AS ?rank) }
+  UNION
+  { ?item wdt:P20 ?place . ?place p:P625/psv:P625 ?cn . BIND(2 AS ?rank) }
+  UNION
+  { ?item wdt:P27 ?place . ?place p:P625/psv:P625 ?cn . BIND(3 AS ?rank) }
   ?cn wikibase:geoLatitude ?lat ; wikibase:geoLongitude ?lng .
 }
 """,
     "polity": """
-SELECT ?item ?lat ?lng WHERE {
+SELECT ?item ?lat ?lng ?rank WHERE {
   VALUES ?item { %ITEMS% }
-  ?item wdt:P36 ?place .
-  ?place p:P625/psv:P625 ?cn .
+  { ?item wdt:P36 ?place . ?place p:P625/psv:P625 ?cn . BIND(1 AS ?rank) }
+  UNION
+  { ?item p:P625/psv:P625 ?cn . BIND(2 AS ?rank) }
+  UNION
+  { ?item wdt:P17 ?place . ?place p:P625/psv:P625 ?cn . BIND(3 AS ?rank) }
   ?cn wikibase:geoLatitude ?lat ; wikibase:geoLongitude ?lng .
 }
 """,
     "event": """
-SELECT ?item ?lat ?lng WHERE {
+SELECT ?item ?lat ?lng ?rank WHERE {
   VALUES ?item { %ITEMS% }
-  { ?item p:P625/psv:P625 ?cn }
+  { ?item p:P625/psv:P625 ?cn . BIND(1 AS ?rank) }
   UNION
-  { ?item wdt:P276 ?place . ?place p:P625/psv:P625 ?cn }
+  { ?item wdt:P276 ?place . ?place p:P625/psv:P625 ?cn . BIND(2 AS ?rank) }
+  UNION
+  { ?item wdt:P17 ?place . ?place p:P625/psv:P625 ?cn . BIND(3 AS ?rank) }
   ?cn wikibase:geoLatitude ?lat ; wikibase:geoLongitude ?lng .
 }
 """,
 }
+
+# How precisely each rank places the item. Worth carrying through to the
+# database: a country centroid can put someone in the wrong region entirely.
+COORD_SOURCE = {
+    "person": {1: "birthplace", 2: "death place", 3: "country"},
+    "polity": {1: "capital", 2: "own coordinates", 3: "country"},
+    "event": {1: "own coordinates", 2: "location", 3: "country"},
+}
+
+# Bumped when the coordinate queries change, so cached batches from an older
+# query are not reused.
+COORD_VERSION = 2
 
 FIELD_MAP = {
     "person": {"birth": ("birth", "birthPrec"), "death": ("death", "deathPrec"),
@@ -270,6 +296,7 @@ def flatten(binding, type_):
         "sitelinks": int(cell(binding, "sitelinks") or 0),
         "lat": None,
         "lng": None,
+        "location_source": None,
     }
 
     article = cell(binding, "article")
@@ -285,13 +312,18 @@ def flatten(binding, type_):
     return record
 
 
+def best_coordinate(rows):
+    """Lowest rank wins — the most specific property that answered."""
+    return min(rows, key=lambda r: r[0])
+
+
 def merge_coordinates(records, coordinates):
-    """Attach {qid: (lat, lng)} to records. Records without one keep lat/lng None
-    and are dropped later by transform, which needs a region."""
+    """Attach {qid: (lat, lng, source)} to records. Records without one keep
+    lat/lng None and are dropped later by transform, which needs a region."""
     for record in records:
         found = coordinates.get(record["qid"])
         if found:
-            record["lat"], record["lng"] = found
+            record["lat"], record["lng"], record["location_source"] = found
     return records
 
 
@@ -303,20 +335,32 @@ def fetch_coordinates(qids, type_, contact, cache_dir):
     # on the set size too means a changed set refetches rather than silently
     # skipping the items that moved.
     population = len(qids)
-    for index, batch in enumerate(batched(sorted(qids))):
-        cached = cache_dir / f"{type_}-coords-{population}-{index}.json"
+    batches = list(batched(sorted(qids)))
+    for index, batch in enumerate(batches):
+        cached = cache_dir / f"v{COORD_VERSION}-{type_}-coords-{population}-{index}.json"
         if cached.exists():
             coordinates.update(json.loads(cached.read_text(encoding="utf-8")))
             continue
 
         values = " ".join(f"wd:{q}" for q in batch)
         payload = run_query(COORD_QUERIES[type_].replace("%ITEMS%", values), contact)
-        found = {}
+
+        candidates = {}
         for binding in payload["results"]["bindings"]:
             qid = cell(binding, "item").rsplit("/", 1)[-1]
-            found[qid] = (float(cell(binding, "lat")), float(cell(binding, "lng")))
+            rank = int(cell(binding, "rank") or 9)
+            candidates.setdefault(qid, []).append(
+                (rank, float(cell(binding, "lat")), float(cell(binding, "lng"))))
+
+        found = {}
+        for qid, rows in candidates.items():
+            rank, lat, lng = best_coordinate(rows)
+            found[qid] = (lat, lng, COORD_SOURCE[type_].get(rank, "unknown"))
+
         cached.write_text(json.dumps(found), encoding="utf-8")
-        print(f"  coords {index + 1}: {len(found)}/{len(batch)} located")
+        exact = sum(1 for v in found.values() if v[2] != "country")
+        print(f"  coords {index + 1}/{len(batches)}: {len(found)}/{len(batch)} located "
+              f"({exact} precisely)")
         coordinates.update(found)
         time.sleep(1)
     return coordinates

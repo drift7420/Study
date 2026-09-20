@@ -39,6 +39,40 @@ def test_the_edition_is_substituted_everywhere():
     assert "%" not in query
 
 
+def test_a_slow_edition_narrows_its_own_window(monkeypatch):
+    """zh, fr, de and en all timed out at a decade, which was most of the
+    comparison. A share measured over two years still answers the question."""
+    spans = []
+
+    def fake(sparql, contact, retries=4):
+        span = 1 if '< "1801-' in sparql else 10 if '< "1810-' in sparql else 0
+        spans.append(sparql)
+        if '< "1810-' in sparql or '< "1805-' in sparql:
+            raise RuntimeError("504 Gateway Timeout")
+        return {"results": {"bindings": [
+            {"bucket": {"value": "visible"}, "n": {"value": "7"}}]}}
+
+    monkeypatch.setattr(probe_floor.extract, "run_query", fake)
+    found, years, error = probe_floor.probe_edition("zh", 1800, 10, "c")
+    assert error is None
+    assert years == 2                       # 10 -> 5 -> 2
+    assert found == {"visible": 7, "hidden": 0}
+
+
+def test_an_edition_that_fails_even_at_one_year_reports_rather_than_loops(monkeypatch):
+    monkeypatch.setattr(probe_floor.extract, "run_query",
+                        lambda *a, **k: (_ for _ in ()).throw(RuntimeError("504")))
+    found, years, error = probe_floor.probe_edition("en", 1800, 10, "c")
+    assert found is None and years == probe_floor.MIN_SPAN and error is not None
+
+
+def test_the_count_does_not_pay_for_a_redundant_distinct():
+    """An item has at most one article per edition, so DISTINCT bought a
+    guarantee the data already gives — on the queries that were too slow."""
+    assert "COUNT(*)" in probe_floor.QUERY
+    assert "DISTINCT" not in probe_floor.QUERY
+
+
 def test_both_buckets_are_read_back():
     payload = {"results": {"bindings": [
         {"bucket": {"value": "visible"}, "n": {"value": "1108"}},

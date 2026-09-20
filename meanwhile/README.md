@@ -51,7 +51,7 @@ prototype can load in place of its hand-written sample.
 | `probe_floor.py` | How much each language's history the sitelink floor hides | Yes |
 
 ```bash
-python -m pytest tests/ -q      # 123 tests
+python -m pytest tests/ -q      # 126 tests
 ```
 
 ### extract.py is the stage the network shapes
@@ -119,7 +119,9 @@ That list replaced nine multipliers picked by intuition, after `thresholds.py`
 showed what they were doing: Oceania, relaxed to 4, held 3.7% of all 1500-1999
 entries, more than East Asia and Japan & Korea together, while a Qing official
 needed ten sitelinks. Australia and New Zealand are English-language subjects
-with dense coverage. The fix moved Asia from 6.4% of that era to 17.2%.
+with dense coverage. In the rebuild, Western Europe : East Asia for 1500-1999
+went from 30.5:1 to 11.6:1, East Asia's first five centuries CE from 519 rows
+to 1,136, and the database from 112,000 entries to 130,300.
 
 Oceania is still one region holding both Sydney and Vanuatu, and the strict bar
 is right for the first and wrong for the second. Splitting it is the better

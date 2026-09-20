@@ -19,6 +19,12 @@ If zh and fr come back with similar visible shares, the floor is not what is
 emptying East Asia and the gap is Wikidata's own. If zh is far lower, the
 floor is ours and lowering it would recover real history.
 
+The cost of the query scales with how much the edition has written, so the
+big editions are exactly the ones that time out — zh, fr, de and en all did,
+which is most of the comparison. Each edition therefore narrows its own window
+until WDQS will answer, and reports the window it used. Shares stay comparable
+across different windows; the totals do not, and the table says so.
+
 Nothing here writes to the database; it prints a table and exits.
 
 Usage:
@@ -39,8 +45,13 @@ EDITIONS = ("zh", "ja", "hi", "ar", "sw", "fr", "de", "en")
 
 FLOOR = extract.MIN_SITELINKS["person"]
 
+MIN_SPAN = 1
+
+# COUNT(*) rather than COUNT(DISTINCT ?item): an item has at most one article
+# per edition, so the distinct was paying for a guarantee the data already
+# gives — and paying for it on exactly the queries that were too slow.
 QUERY = """
-SELECT ?bucket (COUNT(DISTINCT ?item) AS ?n) WHERE {
+SELECT ?bucket (COUNT(*) AS ?n) WHERE {
   ?item wdt:P569 ?driver .
   %DATEFILTER%
   ?item wdt:P31 wd:Q5 ; wikibase:sitelinks ?sitelinks .
@@ -68,27 +79,39 @@ def counts(payload):
     return out
 
 
+def probe_edition(edition, decade, span, contact):
+    """Narrow the window until WDQS will answer. Returns (counts, years, error)."""
+    while True:
+        try:
+            return counts(extract.run_query(
+                query_for(edition, decade, span), contact)), span, None
+        except Exception as exc:                       # noqa: BLE001
+            if span <= MIN_SPAN:
+                return None, span, exc
+            span //= 2
+            print(f"  {edition}: narrowing to {span} year(s)")
+
+
 def probe(editions, decade, span, contact):
-    print(f"\nBiographies of people born {decade}-{decade + span - 1}, by Wikipedia "
-          f"edition.\n'visible' means {FLOOR}+ sitelinks — the ones extract.py "
-          f"fetches at all.\n")
-    print("edition".ljust(10) + "total".rjust(9) + "visible".rjust(9)
+    print(f"\nBiographies of people born from {decade}, by Wikipedia edition.\n"
+          f"'visible' means {FLOOR}+ sitelinks — the ones extract.py fetches at all.\n"
+          f"An edition that timed out narrowed its own window, so compare the\n"
+          f"shares, not the totals.\n")
+    print("edition".ljust(10) + "years".rjust(6) + "total".rjust(9) + "visible".rjust(9)
           + "hidden".rjust(9) + "  share visible")
 
     for edition in editions:
-        try:
-            payload = extract.run_query(query_for(edition, decade, span), contact)
-        except Exception as exc:                       # noqa: BLE001
-            print(f"{edition.ljust(10)}{'failed'.rjust(9)}  ({exc})")
+        found, years, error = probe_edition(edition, decade, span, contact)
+        if found is None:
+            print(f"{edition.ljust(10)}{years:6}{'failed'.rjust(9)}  ({error})")
             continue
 
-        found = counts(payload)
         total = found["visible"] + found["hidden"]
         if not total:
-            print(f"{edition.ljust(10)}{0:9}")
+            print(f"{edition.ljust(10)}{years:6}{0:9}  (nothing in this window)")
             continue
-        print(f"{edition.ljust(10)}{total:9}{found['visible']:9}{found['hidden']:9}"
-              f"{found['visible'] / total:>15.0%}")
+        print(f"{edition.ljust(10)}{years:6}{total:9}{found['visible']:9}"
+              f"{found['hidden']:9}{found['visible'] / total:>15.0%}")
 
 
 def main():
@@ -96,8 +119,8 @@ def main():
     parser.add_argument("--decade", type=int, default=1800,
                         help="First year of the window to sample (default 1800).")
     parser.add_argument("--span", type=int, default=10,
-                        help="Years to sample. Widen only if a decade is too thin "
-                             "to read; the query cost scales with it.")
+                        help="Years to sample (default 10). An edition that times "
+                             "out halves this for itself until WDQS answers.")
     parser.add_argument("--editions", nargs="+", default=list(EDITIONS))
     parser.add_argument("--contact", default=os.environ.get("MEANWHILE_CONTACT"),
                         help="Contact address for the User-Agent header, which "

@@ -48,9 +48,10 @@ prototype can load in place of its hand-written sample.
 | `transform.py` | Raw records to rows: spans, confidence, thresholds | Yes |
 | `build_db.py` | SQLite + FTS5 + indexes, coverage report, prototype JSON | Yes |
 | `thresholds.py` | What each notability cutoff would admit, per region | Yes |
+| `probe_floor.py` | How much each language's history the sitelink floor hides | Yes |
 
 ```bash
-python -m pytest tests/ -q      # 114 tests
+python -m pytest tests/ -q      # 123 tests
 ```
 
 ### extract.py is the stage the network shapes
@@ -107,20 +108,39 @@ overlap queries without special cases.
 `active_start`/`active_end`, inferred and flagged. Dropping partial records
 would quietly delete exactly the thin-coverage regions the app exists to show.
 
-**Thresholds relax by region.** Sitelink counts measure who writes Wikipedia,
-so one global cutoff empties sub-Saharan Africa and pre-Columbian America while
-keeping European minor nobility. `RELAXED_REGIONS` in `transform.py` lowers the
-bar where a flat cutoff would misrepresent the world. The multipliers in it
-were guesses; `thresholds.py` prints the numbers they should be chosen from.
+**The bar is held only where sitelinks mean notability.** A sitelink count
+measures how many language editions wrote about someone, which is a fair proxy
+in a region several editions cover and a poor one in a region covered mostly
+by its own language. `STRICT_REGIONS` in `transform.py` names the six where
+the full cutoff applies — the four Europes, North America and Oceania —
+and everywhere else drops to the extraction floor.
 
-**The coordinate fallback did not close the coverage gap.** Requiring place of
-birth was dropping a third of all people, and the guess was that it was doing
-so unevenly enough to explain East Asia's thinness. Falling back to place of
-death and country raised the placement rate from 66% to 95% and added 33,000
-entries — but it raised every region by about the same third, so Western
-Europe : East Asia for 1500-1999 moved from 30.9:1 to only 30.5:1. Europe is
-still 65% of that era and East Asia 1.2%. Whatever is emptying East Asia, it
-is not the coordinates, and the next place to look is the sitelink cutoff.
+That list replaced nine multipliers picked by intuition, after `thresholds.py`
+showed what they were doing: Oceania, relaxed to 4, held 3.7% of all 1500-1999
+entries, more than East Asia and Japan & Korea together, while a Qing official
+needed ten sitelinks. Australia and New Zealand are English-language subjects
+with dense coverage. The fix moved Asia from 6.4% of that era to 17.2%.
+
+Oceania is still one region holding both Sydney and Vanuatu, and the strict bar
+is right for the first and wrong for the second. Splitting it is the better
+fix; the region boundaries are the limitation, not the multiplier.
+
+**Two things that turned out not to explain the coverage gap.** Requiring place
+of birth was dropping a third of all people, and the guess was that it did so
+unevenly enough to explain East Asia's thinness. Falling back to place of death
+and country raised placement from 66% to 95% and added 33,000 entries — but it
+raised every region by about the same third, so Western Europe : East Asia for
+1500-1999 moved from 30.9:1 to 30.5:1.
+
+The notability cutoff was the next suspect, and it isn't that either: the ratio
+is ~40:1 at *every* cutoff from 4 sitelinks to 30. Relaxing the bar scales both
+sides equally.
+
+What remains untested is the extraction floor itself. `extract.py` fetches
+nothing below 4 sitelinks, and a figure covered only by zh.wikipedia has one,
+so the whole coverage table describes only the part of Wikidata above a line
+drawn in a unit that counts languages. `probe_floor.py` asks Wikidata directly
+what share of each edition's biographies clear that line.
 
 **Region boxes are ordered.** First match wins, so the list runs specific to
 general: East Asia before Southeast Asia or Guangzhou lands in the wrong one;

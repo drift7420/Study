@@ -35,9 +35,27 @@ PERSON, POLITY, EVENT = "person", "polity", "event"
 
 DEFAULT_THRESHOLDS = {PERSON: 10, POLITY: 4, EVENT: 5}
 
-# Regions a single global cutoff would strip almost bare.
-RELAXED_REGIONS = {9: 0.4, 10: 0.4, 11: 0.4, 12: 0.4, 18: 0.4,
-                   20: 0.5, 21: 0.5, 22: 0.5, 17: 0.6}
+# The bar is held only where a sitelink count is a fair measure of notability
+# rather than a measure of which language wrote the article. Everywhere else it
+# drops to the extraction floor.
+#
+# The list this replaces was nine regions picked by intuition, and thresholds.py
+# showed the intuition was wrong in a way that mattered: Oceania was relaxed to
+# 4 and took 3.7% of all 1500-1999 entries, more than East Asia and Japan &
+# Korea together, while a Qing official needed ten sitelinks. Australia and New
+# Zealand are English-language subjects with dense coverage; relaxing them
+# admits minor Australians, not neglected ones.
+#
+# Relaxing does not close the real gap. Western Europe holds ~40x East Asia's
+# early-modern entries at *every* cutoff from 4 to 30, so the ratio is not a
+# threshold artifact. What this fixes is the part that was ours to fix.
+#
+# Known cost: Oceania is one region holding both Sydney and Vanuatu, and the
+# strict bar is right for the first and wrong for the second. Splitting it
+# would be the better fix; the region boundaries are the limitation here, not
+# the multiplier.
+STRICT_REGIONS = {1, 2, 3, 4, 18, 19}   # the four Europes, Oceania, North America
+RELAXED_MULTIPLIER = 0.4                # 10 sitelinks -> 4, the extraction floor
 
 
 @dataclass
@@ -113,7 +131,7 @@ def _span_for_range(rec, start_keys, end_keys, point_keys=()):
 
 def threshold_for(type_, region_id, thresholds=None):
     base = (thresholds or DEFAULT_THRESHOLDS)[type_]
-    return base * RELAXED_REGIONS.get(region_id, 1.0)
+    return base if region_id in STRICT_REGIONS else base * RELAXED_MULTIPLIER
 
 
 def build_row(rec, type_, thresholds=None) -> Row | None:

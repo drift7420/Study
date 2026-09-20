@@ -24,11 +24,12 @@ ROME, XIAN = (41.9, 12.5), (34.3, 108.9)
 
 def test_it_counts_below_the_live_threshold():
     """The whole point: seeing what the current cutoff is throwing away."""
-    scores = thresholds.tally([person("Q1", 5, *XIAN)], tf.PERSON)
-    east_asia = next(r.id for r in thresholds.regions_mod.REGIONS if r.name == "East Asia")
-    assert scores[east_asia] == [5]
-    # ...which the real threshold (10, unrelaxed for East Asia) would drop.
-    assert tf.build_row(person("Q1", 5, *XIAN), tf.PERSON) is None
+    scores = thresholds.tally([person("Q1", 5, *ROME)], tf.PERSON)
+    southern_europe = next(r.id for r in thresholds.regions_mod.REGIONS
+                           if r.name == "Southern Europe")
+    assert scores[southern_europe] == [5]
+    # ...which the real threshold (10, strict in Europe) would drop.
+    assert tf.build_row(person("Q1", 5, *ROME), tf.PERSON) is None
 
 
 def test_a_qid_seen_twice_is_counted_once():

@@ -1,14 +1,17 @@
 """What each notability threshold admits, per region.
 
-RELAXED_REGIONS in transform.py lowers the sitelink bar where a flat cutoff
-would misrepresent the world. Its multipliers were guessed before there was
-any data to check them against, and one guess has already proved wrong: East
-Asia is not in the list, and holds 1.2% of the 1500-1999 rows.
+STRICT_REGIONS in transform.py decides where a sitelink count is a fair
+measure of notability and where it is really a measure of which language wrote
+the article. This prints the numbers that decision should be made from — how
+many entries each region would keep at each cutoff, and what share of the
+world that leaves it with. It reads the same raw files build_db.py reads and
+changes nothing.
 
-This prints the numbers those multipliers should be chosen from — how many
-entries each region would keep at each cutoff, and what share of the world
-that leaves it with. It reads the same raw files build_db.py reads and changes
-nothing.
+It has already overturned one guess and one hypothesis. The nine-region
+relaxation list it replaced gave Oceania 3.7% of all 1500-1999 entries, more
+than East Asia and Japan & Korea together. And the gap it was meant to explain
+turns out not to be a threshold effect at all: Western Europe holds about 40x
+East Asia's early-modern entries at every cutoff from 4 to 30.
 
 A caveat worth keeping in view: relaxing a threshold does not find more
 history, it admits less-linked entries. That is the right trade for an app

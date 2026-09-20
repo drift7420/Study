@@ -172,6 +172,27 @@ def test_thin_regions_get_a_relaxed_threshold():
     assert in_west_africa is not None
 
 
+def test_east_asia_is_not_held_to_europes_bar():
+    """It was, and Oceania was not, which is how Australia came to outrank
+    Ming and Qing China four to one in the coverage table."""
+    kw = dict(birth=wd("+1600-01-01T00:00:00Z", 9), sitelinks=5)
+    assert tf.build_row(person(lat=34.3, lng=108.9, **kw), tf.PERSON) is not None
+    assert tf.build_row(person(lat=-33.9, lng=151.2, **kw), tf.PERSON) is None
+
+
+def test_the_strict_regions_are_the_ones_english_wikipedia_covers_densely():
+    strict = {regions.BY_ID[rid].name for rid in tf.STRICT_REGIONS}
+    assert strict == {"Western Europe", "Southern Europe", "Northern Europe",
+                      "Eastern Europe", "Oceania", "North America"}
+
+
+def test_a_relaxed_person_threshold_lands_on_the_extraction_floor():
+    """extract.py fetches nothing below 4 sitelinks, so relaxing past that
+    would be a cutoff with nothing behind it."""
+    east_asia = next(r.id for r in regions.REGIONS if r.name == "East Asia")
+    assert tf.threshold_for(tf.PERSON, east_asia) == 4.0
+
+
 def test_polity_without_an_end_runs_to_the_present():
     rec = {"qid": "Q2", "name": "Somewhere", "sitelinks": 20, "lat": 41.9, "lng": 12.5,
            "inception": wd("+1800-01-01T00:00:00Z", 9)}

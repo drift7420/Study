@@ -1,0 +1,1948 @@
+<title>Meanwhile App Mockup</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bodoni+Moda:opsz,wght@6..96,400;6..96,500;6..96,700&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+
+<style>
+  :root {
+    --ink:        #080D13;
+    --drafting:   #0C131B;
+    --device:     #0F1721;
+    --surface:    #131E29;
+    --surface-2:  #182634;
+    --line:       #253544;
+    --line-soft:  #1B2836;
+    --sea:        #0B141D;
+    --land:       #27394B;
+    --text:       #E6EDF3;
+    --muted:      #8399AC;
+    --dim:        #5C7288;
+    --brass:      #E0A340;
+    --brass-dim:  #8A6528;
+    --cyan:       #6FB2C9;
+    --violet:     #B08AE0;
+
+    --f-display: "Bodoni Moda", "Didot", Georgia, serif;
+    --f-ui: "IBM Plex Sans", system-ui, -apple-system, sans-serif;
+    --f-mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  }
+  * { box-sizing: border-box; }
+
+  /* display:flex on the overlays would otherwise beat the default [hidden] rule */
+  [hidden] { display: none !important; }
+
+  html, body { background: var(--ink); }
+
+  body {
+    margin: 0;
+    font-family: var(--f-ui);
+    color: var(--text);
+    background:
+      radial-gradient(900px 600px at 50% -10%, #142130 0%, rgba(20,33,48,0) 70%),
+      var(--ink);
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .wrap {
+    max-width: 1180px;
+    margin: 0 auto;
+    padding-inline: 20px;
+    padding-block: 40px 64px;
+  }
+
+  /* ---------- page header ---------- */
+  .masthead { display: flex; flex-direction: column; gap: 10px; margin-bottom: 36px; }
+  .eyebrow {
+    font-family: var(--f-mono);
+    font-size: 11px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--dim);
+  }
+  .masthead h1 {
+    font-family: var(--f-display);
+    font-weight: 500;
+    font-size: clamp(34px, 6vw, 54px);
+    line-height: 1.02;
+    margin: 0;
+    text-wrap: balance;
+    letter-spacing: -0.01em;
+  }
+  .masthead p {
+    margin: 0;
+    max-width: 62ch;
+    color: var(--muted);
+    font-size: 15px;
+    line-height: 1.6;
+  }
+
+  /* ---------- stage ---------- */
+  .stage {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 28px;
+    align-items: start;
+  }
+  @media (min-width: 980px) {
+    .stage { grid-template-columns: 1fr auto 1fr; gap: 24px; }
+  }
+
+  .notes { display: flex; flex-direction: column; gap: 18px; padding-top: 12px; }
+  @media (min-width: 980px) {
+    .notes.left { align-items: flex-end; text-align: right; }
+  }
+  .note {
+    max-width: 280px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    border-top: 1px solid var(--line);
+    padding-top: 8px;
+  }
+  .note b {
+    font-family: var(--f-mono);
+    font-weight: 500;
+    font-size: 11px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--brass);
+  }
+  .note span { font-size: 13px; line-height: 1.5; color: var(--muted); }
+  .note .dp {
+    font-family: var(--f-mono);
+    font-size: 11px;
+    color: var(--dim);
+  }
+
+  /* ---------- device ---------- */
+  .device-col { display: flex; flex-direction: column; align-items: center; gap: 14px; }
+  .device {
+    width: 100%;
+    max-width: 390px;
+    height: 812px;
+    background: var(--device);
+    border: 1px solid var(--line);
+    border-radius: 34px;
+    padding: 9px;
+    box-shadow: 0 0 0 1px rgba(0,0,0,.6), 0 40px 80px -30px rgba(0,0,0,.9);
+    flex: none;
+  }
+  .screen {
+    height: 100%;
+    background: var(--device);
+    border-radius: 26px;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    position: relative;
+  }
+  .device-cap {
+    font-family: var(--f-mono);
+    font-size: 11px;
+    color: var(--dim);
+    letter-spacing: 0.06em;
+  }
+
+  /* status bar */
+  .statusbar {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 9px 20px 3px;
+    font-family: var(--f-mono);
+    font-size: 11px;
+    color: var(--dim);
+    flex: none;
+  }
+  .sigs { display: flex; align-items: center; gap: 4px; }
+  .sig { width: 3px; background: var(--dim); border-radius: 1px; }
+  .batt { width: 18px; height: 9px; border: 1px solid var(--dim); border-radius: 2px; position: relative; }
+  .batt::after { content:""; position:absolute; inset:1.5px; right: 5px; background: var(--dim); border-radius: 1px; }
+
+  /* app bar */
+  .appbar {
+    display: flex; align-items: baseline; justify-content: space-between;
+    padding: 4px 20px 0;
+    flex: none;
+  }
+  .brand {
+    font-family: var(--f-display);
+    font-size: 19px;
+    font-weight: 500;
+    letter-spacing: 0.01em;
+  }
+  .search-ico {
+    width: 30px; height: 30px; border-radius: 50%;
+    border: 1px solid var(--line);
+    display: grid; place-items: center;
+    color: var(--muted);
+    align-self: center;
+    cursor: pointer;
+    background: none;
+    padding: 0;
+  }
+  .search-ico:hover { border-color: var(--brass-dim); color: var(--brass); }
+
+  /* year header */
+  .yearblock {
+    padding: 6px 20px 10px;
+    display: flex;
+    align-items: flex-end;
+    justify-content: space-between;
+    gap: 12px;
+    flex: none;
+  }
+  .year {
+    font-family: var(--f-display);
+    font-size: 46px;
+    line-height: 0.95;
+    font-weight: 500;
+    letter-spacing: -0.015em;
+    font-variant-numeric: tabular-nums;
+  }
+  .year .approx { font-size: 24px; color: var(--muted); margin-right: 4px; }
+  .year .era-suffix { font-size: 20px; color: var(--muted); margin-left: 5px; letter-spacing: 0.02em; }
+  .tally {
+    font-family: var(--f-mono);
+    font-size: 11px;
+    color: var(--dim);
+    text-align: right;
+    line-height: 1.5;
+    padding-bottom: 5px;
+  }
+  .tally b { color: var(--muted); font-weight: 500; }
+
+  /* era chips */
+  .chips {
+    display: flex;
+    gap: 6px;
+    overflow-x: auto;
+    padding: 0 20px 12px;
+    flex: none;
+    scrollbar-width: none;
+    -webkit-mask-image: linear-gradient(to right, #000 0, #000 88%, transparent 100%);
+    mask-image: linear-gradient(to right, #000 0, #000 88%, transparent 100%);
+  }
+  .chips::-webkit-scrollbar { display: none; }
+  .chip {
+    flex: none;
+    font-family: var(--f-ui);
+    font-size: 11.5px;
+    letter-spacing: 0.02em;
+    color: var(--muted);
+    background: transparent;
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    padding: 5px 11px;
+    cursor: pointer;
+    white-space: nowrap;
+    transition: color .15s, border-color .15s, background .15s;
+  }
+  .chip:hover { border-color: var(--brass-dim); color: var(--text); }
+  .chip[aria-pressed="true"] {
+    color: var(--ink);
+    background: var(--brass);
+    border-color: var(--brass);
+    font-weight: 500;
+  }
+
+  /* map */
+  .mapwrap {
+    position: relative;
+    margin: 0 12px;
+    background: var(--sea);
+    border: 1px solid var(--line-soft);
+    border-radius: 10px;
+    overflow: hidden;
+    flex: none;
+  }
+  #map { display: block; width: 100%; height: 138px; cursor: pointer; }
+  .maphint {
+    position: absolute;
+    left: 8px; bottom: 6px;
+    font-family: var(--f-mono);
+    font-size: 9px;
+    letter-spacing: 0.06em;
+    color: #3D5064;
+    pointer-events: none;
+    text-transform: uppercase;
+  }
+
+  /* slider */
+  .sliderwrap { padding: 14px 20px 8px; flex: none; }
+  .scale-row {
+    display: flex; justify-content: space-between;
+    font-family: var(--f-mono);
+    font-size: 9.5px;
+    color: var(--dim);
+    letter-spacing: 0.05em;
+    margin-bottom: 6px;
+  }
+  .scale-row .rate { color: var(--brass); }
+  input[type="range"] {
+    -webkit-appearance: none; appearance: none;
+    width: 100%;
+    background: transparent;
+    margin: 0;
+    cursor: grab;
+  }
+  input[type="range"]:active { cursor: grabbing; }
+  input[type="range"]::-webkit-slider-runnable-track {
+    height: 2px; background: var(--line); border-radius: 2px;
+  }
+  input[type="range"]::-moz-range-track {
+    height: 2px; background: var(--line); border-radius: 2px;
+  }
+  input[type="range"]::-webkit-slider-thumb {
+    -webkit-appearance: none; appearance: none;
+    width: 16px; height: 16px; margin-top: -7px;
+    border-radius: 50%;
+    background: var(--brass);
+    border: 3px solid var(--device);
+    box-shadow: 0 0 0 1px var(--brass), 0 0 12px rgba(224,163,64,.45);
+  }
+  input[type="range"]::-moz-range-thumb {
+    width: 16px; height: 16px;
+    border-radius: 50%;
+    background: var(--brass);
+    border: 3px solid var(--device);
+    box-shadow: 0 0 0 1px var(--brass), 0 0 12px rgba(224,163,64,.45);
+  }
+  input[type="range"]:focus-visible { outline: none; }
+  input[type="range"]:focus-visible::-webkit-slider-thumb { box-shadow: 0 0 0 2px var(--text); }
+  .ticks {
+    position: relative; height: 12px; margin-top: 4px;
+    font-family: var(--f-mono); font-size: 9px; color: var(--dim);
+  }
+  .ticks span { position: absolute; transform: translateX(-50%); white-space: nowrap; }
+
+  /* bottom sheet */
+  .sheet {
+    margin-top: 6px;
+    background: var(--surface);
+    border-top: 1px solid var(--line);
+    border-radius: 18px 18px 0 0;
+    flex: 1 1 auto;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+  }
+  .grabber {
+    width: 34px; height: 4px; border-radius: 2px;
+    background: var(--line);
+    margin: 8px auto 2px;
+    flex: none;
+  }
+  .sheet-head {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 4px 18px 8px;
+    flex: none;
+  }
+  .sheet-title {
+    font-family: var(--f-mono);
+    font-size: 10.5px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--dim);
+  }
+  .clearbtn {
+    font-family: var(--f-mono);
+    font-size: 10px;
+    letter-spacing: 0.06em;
+    color: var(--brass);
+    background: none; border: none; cursor: pointer; padding: 2px 0;
+    text-transform: uppercase;
+  }
+  .sheet-body {
+    overflow-y: auto;
+    padding: 0 14px 18px;
+    display: flex; flex-direction: column; gap: 8px;
+    scrollbar-width: thin;
+    scrollbar-color: var(--line) transparent;
+  }
+  .sheet-body::-webkit-scrollbar { width: 4px; }
+  .sheet-body::-webkit-scrollbar-thumb { background: var(--line); border-radius: 2px; }
+
+  .rcard {
+    background: var(--surface-2);
+    border: 1px solid var(--line-soft);
+    border-radius: 10px;
+    padding: 10px 12px 11px;
+  }
+  .rcard-head {
+    display: flex; align-items: baseline; justify-content: space-between;
+    gap: 8px; margin-bottom: 7px;
+  }
+  .rname { font-size: 13px; font-weight: 600; letter-spacing: 0.005em; }
+  .rcount {
+    font-family: var(--f-mono); font-size: 10px; color: var(--dim);
+    font-variant-numeric: tabular-nums;
+  }
+  .entry {
+    display: grid;
+    grid-template-columns: 7px 1fr auto;
+    align-items: baseline;
+    gap: 8px;
+    padding: 4px 0;
+    width: 100%;
+    text-align: left;
+    background: none;
+    border: none;
+    border-radius: 5px;
+    color: inherit;
+    font: inherit;
+    cursor: pointer;
+  }
+  .entry:hover .ename { color: var(--brass); }
+  .entry:focus-visible { outline: 1px solid var(--brass); outline-offset: 1px; }
+  .entry + .entry { border-top: 1px solid rgba(255,255,255,.035); }
+  .dot { width: 5px; height: 5px; border-radius: 50%; transform: translateY(-1px); }
+  .dot.person { background: var(--brass); }
+  .dot.polity { background: var(--cyan); }
+  .dot.event  { background: var(--violet); }
+  .ename { font-size: 12.5px; line-height: 1.35; color: var(--text); }
+  .espan {
+    font-family: var(--f-mono); font-size: 9.5px; color: var(--dim);
+    white-space: nowrap; font-variant-numeric: tabular-nums;
+  }
+  .more { font-family: var(--f-mono); font-size: 9.5px; color: var(--dim); padding-top: 5px; }
+  .empty {
+    text-align: center; color: var(--dim); font-size: 12px;
+    padding: 26px 20px; line-height: 1.6;
+  }
+
+  /* ---------- search screen ---------- */
+  .search {
+    position: absolute; inset: 0;
+    background: var(--device);
+    z-index: 4;
+    display: flex; flex-direction: column;
+    border-radius: 26px;
+    overflow: hidden;
+  }
+  .search-bar {
+    display: flex; align-items: center; gap: 10px;
+    padding: 14px 16px 10px;
+    flex: none;
+    border-bottom: 1px solid var(--line-soft);
+  }
+  .search-bar input {
+    flex: 1;
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 9px 11px;
+    color: var(--text);
+    font-family: var(--f-ui); font-size: 13.5px;
+  }
+  .search-bar input::placeholder { color: var(--dim); }
+  .search-bar input:focus { outline: none; border-color: var(--brass-dim); }
+
+  .search-body {
+    overflow-y: auto;
+    padding: 12px 14px 20px;
+    scrollbar-width: thin;
+    scrollbar-color: var(--line) transparent;
+  }
+  .search-body::-webkit-scrollbar { width: 4px; }
+  .search-body::-webkit-scrollbar-thumb { background: var(--line); border-radius: 2px; }
+
+  .sgroup-title {
+    font-family: var(--f-mono); font-size: 9.5px;
+    letter-spacing: 0.12em; text-transform: uppercase;
+    color: var(--dim);
+    margin: 14px 0 5px;
+  }
+  .sgroup-title:first-child { margin-top: 0; }
+
+  .sresult {
+    display: grid;
+    grid-template-columns: 7px 1fr;
+    gap: 9px;
+    width: 100%;
+    text-align: left;
+    background: none;
+    border: none;
+    border-radius: 6px;
+    padding: 7px 6px;
+    color: inherit; font: inherit;
+    cursor: pointer;
+  }
+  .sresult:hover { background: var(--surface); }
+  .sresult:focus-visible { outline: 1px solid var(--brass); outline-offset: -1px; }
+  .sresult .dot { transform: translateY(4px); }
+  .sresult b { font-weight: 500; font-size: 13px; display: block; line-height: 1.3; }
+  .sresult em {
+    font-style: normal;
+    font-family: var(--f-mono); font-size: 9.5px; color: var(--dim);
+    display: block; margin-top: 2px;
+  }
+
+  .yearjump {
+    display: flex; align-items: center; justify-content: space-between;
+    gap: 10px; width: 100%;
+    background: rgba(224,163,64,.09);
+    border: 1px solid color-mix(in srgb, var(--brass) 32%, transparent);
+    border-radius: 8px;
+    padding: 10px 12px;
+    margin-bottom: 4px;
+    color: var(--brass);
+    font-family: var(--f-ui); font-size: 13px; font-weight: 500;
+    cursor: pointer;
+  }
+  .yearjump:hover { background: rgba(224,163,64,.15); }
+  .yearjump span:last-child { font-family: var(--f-mono); font-size: 9.5px; color: var(--dim); }
+
+  .try-label { font-size: 12.5px; color: var(--muted); line-height: 1.6; margin-bottom: 10px; }
+  .try-row { display: flex; flex-wrap: wrap; gap: 6px; }
+  .try {
+    font-family: var(--f-ui); font-size: 11.5px;
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    padding: 5px 11px;
+    color: var(--muted);
+    cursor: pointer;
+  }
+  .try:hover { border-color: var(--brass-dim); color: var(--brass); }
+
+  /* ---------- detail screen ---------- */
+  .detail {
+    position: absolute; inset: 0;
+    background: var(--device);
+    z-index: 5;
+    display: flex; flex-direction: column;
+    border-radius: 26px;
+    overflow: hidden;
+  }
+  .detail-bar {
+    display: flex; align-items: center; gap: 10px;
+    padding: 14px 16px 8px;
+    flex: none;
+  }
+  .backbtn {
+    display: inline-flex; align-items: center; gap: 6px;
+    background: none; border: none; cursor: pointer;
+    color: var(--muted);
+    font-family: var(--f-mono); font-size: 10.5px;
+    letter-spacing: 0.08em; text-transform: uppercase;
+    padding: 4px 0;
+  }
+  .backbtn:hover { color: var(--brass); }
+  .kind {
+    margin-left: auto;
+    font-family: var(--f-mono); font-size: 9.5px;
+    letter-spacing: 0.1em; text-transform: uppercase;
+    padding: 3px 8px; border-radius: 999px;
+    border: 1px solid currentColor;
+  }
+  .kind.person { color: var(--brass); }
+  .kind.polity { color: var(--cyan); }
+  .kind.event  { color: var(--violet); }
+
+  .detail-body {
+    overflow-y: auto;
+    padding: 0 18px 22px;
+    scrollbar-width: thin;
+    scrollbar-color: var(--line) transparent;
+  }
+  .detail-body::-webkit-scrollbar { width: 4px; }
+  .detail-body::-webkit-scrollbar-thumb { background: var(--line); border-radius: 2px; }
+
+  .dname {
+    font-family: var(--f-display);
+    font-size: 28px; line-height: 1.12; font-weight: 500;
+    margin: 2px 0 6px;
+    text-wrap: balance;
+  }
+  .ddesc { font-size: 13.5px; line-height: 1.55; color: var(--muted); margin-bottom: 14px; }
+  .dspan {
+    font-family: var(--f-display);
+    font-size: 21px; font-variant-numeric: tabular-nums;
+    letter-spacing: 0.01em;
+  }
+  .dspan em { font-style: normal; color: var(--dim); font-size: 12px; font-family: var(--f-mono); margin-left: 7px; }
+
+  .facts {
+    display: grid; grid-template-columns: auto 1fr; gap: 5px 14px;
+    padding: 12px 0 14px;
+    border-top: 1px solid var(--line-soft);
+    border-bottom: 1px solid var(--line-soft);
+    margin: 12px 0 16px;
+    font-size: 12.5px;
+  }
+  .facts dt {
+    font-family: var(--f-mono); font-size: 9.5px; color: var(--dim);
+    letter-spacing: 0.08em; text-transform: uppercase;
+    padding-top: 2px;
+  }
+  .facts dd { margin: 0; color: var(--text); }
+
+  .jumpbtn {
+    display: block; width: 100%;
+    background: rgba(224,163,64,.09);
+    border: 1px solid color-mix(in srgb, var(--brass) 32%, transparent);
+    color: var(--brass);
+    border-radius: 8px;
+    padding: 9px 12px;
+    font-family: var(--f-ui); font-size: 12.5px; font-weight: 500;
+    cursor: pointer;
+    margin-bottom: 18px;
+  }
+  .jumpbtn:hover { background: rgba(224,163,64,.15); }
+
+  .sec-title {
+    font-family: var(--f-mono); font-size: 10px;
+    letter-spacing: 0.12em; text-transform: uppercase;
+    color: var(--dim);
+    margin-bottom: 3px;
+  }
+  .sec-note { font-size: 11.5px; color: var(--dim); line-height: 1.5; margin-bottom: 10px; }
+
+  .cgroup { margin-bottom: 11px; }
+  .cgroup-name {
+    font-family: var(--f-mono); font-size: 10px;
+    color: var(--cyan); letter-spacing: 0.06em;
+    margin-bottom: 3px;
+  }
+
+  .wikilink {
+    display: flex; align-items: center; justify-content: space-between;
+    gap: 10px;
+    margin-top: 20px; padding: 11px 13px;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    color: var(--text); text-decoration: none;
+    font-size: 12.5px;
+  }
+  .wikilink:hover { border-color: var(--brass-dim); color: var(--brass); }
+  .wikilink span:first-child { line-height: 1.45; }
+  .wikilink span:last-child { font-family: var(--f-mono); font-size: 12px; color: var(--dim); flex: none; }
+  .offline-note {
+    margin-top: 8px;
+    font-family: var(--f-mono); font-size: 9.5px; color: var(--dim);
+    line-height: 1.5; text-align: center;
+  }
+
+  .legend {
+    display: flex; gap: 8px; justify-content: center;
+    padding: 6px 0 2px;
+    flex: none;
+  }
+  .filt {
+    display: inline-flex; align-items: center; gap: 5px;
+    font-family: var(--f-mono); font-size: 9.5px;
+    letter-spacing: 0.05em; text-transform: uppercase;
+    color: var(--dim);
+    background: none;
+    border: 1px solid transparent;
+    border-radius: 999px;
+    padding: 3px 9px;
+    cursor: pointer;
+    transition: color .12s, border-color .12s, opacity .12s;
+  }
+  .filt i {
+    display: inline-block; width: 6px; height: 6px; border-radius: 50%;
+    border: 1px solid currentColor;
+    background: transparent;
+  }
+  .filt[data-type="person"] { --swatch: var(--brass); }
+  .filt[data-type="polity"] { --swatch: var(--cyan); }
+  .filt[data-type="event"]  { --swatch: var(--violet); }
+  .filt[aria-pressed="true"] {
+    color: var(--swatch);
+    border-color: color-mix(in srgb, var(--swatch) 35%, transparent);
+  }
+  .filt[aria-pressed="true"] i { background: var(--swatch); border-color: var(--swatch); }
+  .filt[aria-pressed="false"] { opacity: .5; text-decoration: line-through; }
+  .filt:focus-visible { outline: 1px solid var(--text); outline-offset: 1px; }
+
+  /* ---------- bottom notes ---------- */
+  .decisions {
+    margin-top: 56px;
+    border-top: 1px solid var(--line);
+    padding-top: 28px;
+    display: grid;
+    gap: 22px;
+    grid-template-columns: 1fr;
+  }
+  @media (min-width: 720px) { .decisions { grid-template-columns: repeat(3, 1fr); } }
+  .dec h3 {
+    font-family: var(--f-mono);
+    font-size: 10.5px; letter-spacing: 0.12em; text-transform: uppercase;
+    color: var(--brass); margin: 0 0 8px;
+    font-weight: 500;
+  }
+  .dec ul { margin: 0; padding-left: 16px; color: var(--muted); font-size: 13px; line-height: 1.65; }
+  .dec li { margin-bottom: 4px; }
+  .dec code {
+    font-family: var(--f-mono); font-size: 11.5px;
+    color: var(--cyan); background: rgba(111,178,201,.08);
+    padding: 1px 4px; border-radius: 3px;
+  }
+  .caveat {
+    margin-top: 30px; padding: 14px 16px;
+    border-left: 2px solid var(--brass-dim);
+    background: rgba(224,163,64,.05);
+    color: var(--muted); font-size: 13px; line-height: 1.6;
+    max-width: 72ch;
+  }
+  .caveat b { color: var(--text); font-weight: 600; }
+
+  @media (prefers-reduced-motion: reduce) {
+    * { transition: none !important; animation: none !important; }
+  }
+</style>
+
+<div class="wrap">
+
+  <header class="masthead">
+    <div class="eyebrow">Android · v1 concept · one screen, no panning</div>
+    <h1>Meanwhile</h1>
+    <p>Pick a moment and see the whole world at once. Drag the slider — the scale is variable-rate, so the deep past moves in centuries and recent history moves year by year. Tap the coloured dots to filter by type, and any entry to open its detail screen. Every entry is real historical data.</p>
+  </header>
+
+  <div class="stage">
+
+    <div class="notes left">
+      <div class="note">
+        <b>Year header</b>
+        <span>Shows “c.” when the slider’s step is coarser than the data’s precision — no false exactness.</span>
+        <span class="dp">≈ 110dp with chips</span>
+      </div>
+      <div class="note">
+        <b>Era chips</b>
+        <span>Span-based labels, not “Medieval / Renaissance”. Jumps to the <em>start</em> of an era; highlights to track the slider.</span>
+      </div>
+      <div class="note">
+        <b>World map</b>
+        <span>Whole globe, cropped 60°S–80°N. Fits in a fifth of the screen — nothing to pan or pinch.</span>
+        <span class="dp">358 × 138dp</span>
+      </div>
+    </div>
+
+    <div class="device-col">
+      <div class="device">
+        <div class="screen">
+
+          <div class="statusbar">
+            <span>14:32</span>
+            <div class="sigs">
+              <span class="sig" style="height:4px"></span>
+              <span class="sig" style="height:6px"></span>
+              <span class="sig" style="height:8px"></span>
+              <span class="sig" style="height:10px"></span>
+              <span class="batt" style="margin-left:4px"></span>
+            </div>
+          </div>
+
+          <div class="appbar">
+            <div class="brand">Meanwhile</div>
+            <button class="search-ico" title="Look up a person" aria-label="Look up a person">
+              <svg width="13" height="13" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+                <circle cx="7" cy="7" r="5" stroke="currentColor" stroke-width="1.4"/>
+                <path d="M11 11l4 4" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/>
+              </svg>
+            </button>
+          </div>
+
+          <div class="yearblock">
+            <div class="year" id="yearLabel">1206<span class="era-suffix">CE</span></div>
+            <div class="tally" id="tally"></div>
+          </div>
+
+          <div class="chips" id="chips"></div>
+
+          <div class="mapwrap">
+            <canvas id="map"></canvas>
+            <div class="maphint">tap a region</div>
+          </div>
+
+          <div class="sliderwrap">
+            <div class="scale-row">
+              <span>3000 BCE</span>
+              <span class="rate" id="rate">10 yr / step</span>
+              <span>2026</span>
+            </div>
+            <input type="range" id="slider" min="0" max="376" step="1" value="0" aria-label="Year">
+            <div class="ticks" id="ticks"></div>
+          </div>
+
+          <div class="sheet">
+            <div class="grabber"></div>
+            <div class="sheet-head">
+              <div class="sheet-title" id="sheetTitle">Everywhere at once</div>
+              <button class="clearbtn" id="clearBtn" hidden>← all regions</button>
+            </div>
+            <div class="legend">
+              <button type="button" class="filt" data-type="person" aria-pressed="true"><i></i>people</button>
+              <button type="button" class="filt" data-type="polity" aria-pressed="true"><i></i>polities</button>
+              <button type="button" class="filt" data-type="event"  aria-pressed="true"><i></i>events</button>
+            </div>
+            <div class="sheet-body" id="sheetBody"></div>
+          </div>
+
+          <div class="search" id="search" hidden>
+            <div class="search-bar">
+              <input id="searchInput" type="search" placeholder="A name, or a year…" autocomplete="off" aria-label="Search">
+              <button type="button" class="backbtn" id="searchClose">cancel</button>
+            </div>
+            <div class="search-body" id="searchBody"></div>
+          </div>
+
+          <div class="detail" id="detail" hidden></div>
+
+        </div>
+      </div>
+      <div class="device-cap">390 × 812dp · everything visible, nothing to swipe</div>
+    </div>
+
+    <div class="notes right">
+      <div class="note">
+        <b>Region markers</b>
+        <span>One marker per region, area proportional to how much is happening there. Individual pins can’t work — Europe is 40dp wide at world scale.</span>
+      </div>
+      <div class="note">
+        <b>Variable-rate slider</b>
+        <span>376 steps across 5,026 years. 100yr steps in the Bronze Age, 1yr steps after 1900.</span>
+        <span class="dp">piecewise-linear, invertible</span>
+      </div>
+      <div class="note">
+        <b>Search</b>
+        <span>One field for names and years — typing “1492” offers to jump the timeline, and tells you which step it lands on.</span>
+        <span class="dp">FTS5 over name + description</span>
+      </div>
+      <div class="note">
+        <b>Bottom sheet</b>
+        <span>Regions in the order the sun reaches them — the date line sweeping west. Fixed, so a row holds its place and you watch it fill and empty as you scrub.</span>
+        <span class="dp">peek ≈ 570dp</span>
+      </div>
+    </div>
+
+  </div>
+
+  <div class="decisions">
+    <div class="dec">
+      <h3>Locked so far</h3>
+      <ul>
+        <li>Wikidata snapshot → bundled SQLite, lean tier ≈ 20MB</li>
+        <li>Normalised <code>persons</code> / <code>polities</code> / <code>events</code></li>
+        <li>Signed integer years + precision flag</li>
+        <li><code>active_start</code>/<code>active_end</code> for querying, real dates for display</li>
+        <li><code>notability</code> from sitelink count drives ranking</li>
+        <li>Nullable <code>wiki_title</code> — falls back to <code>name</code></li>
+        <li>No network in v1: detail screens are local, Wikipedia is a handoff</li>
+      </ul>
+    </div>
+    <div class="dec">
+      <h3>This screen’s queries</h3>
+      <ul>
+        <li>Year view: three-way UNION over <code>(active_start, active_end, region_id, notability)</code></li>
+        <li>Overlap is against the <em>step window</em> — <code>start &lt; year + step</code> — so at 10yr resolution the screen shows the decade, and single-year events can’t fall through the gaps</li>
+        <li>Contemporaries: interval overlap with the <code>+15</code> adult rule</li>
+        <li>Regions in fixed dawn order (longitude descending from the date line) — never re-ranked, so scrubbing shows change rather than reshuffling</li>
+      </ul>
+    </div>
+    <div class="dec">
+      <h3>Still open</h3>
+      <ul>
+        <li>The ETL pipeline that builds the database — the real risk</li>
+        <li>How the design holds up against 50k messy real rows</li>
+        <li>Whether the coarse buckets show too much at once</li>
+        <li>Android project structure (after the data is proven)</li>
+      </ul>
+    </div>
+  </div>
+
+  <p class="caveat"><b>On the map:</b> it’s a schematic dot-grid, not a basemap — rendered from polygons on a Compose <code>Canvas</code> in the real thing, so it works fully offline with no map SDK or API key. Markers sit at region centroids, so it reads density and spread rather than exact position. <b>“Meanwhile” is a placeholder name</b> — it just fit the idea of cutting away to what else was happening.</p>
+
+</div>
+
+<script>
+(function () {
+  "use strict";
+
+  // ---------- time scale: piecewise-linear segments ----------
+  const SEGMENTS = [
+    { from: -3000, to: -1000, step: 100 },
+    { from: -1000, to:  -500, step:  50 },
+    { from:  -500, to:   500, step:  25 },
+    { from:   500, to:  1500, step:  10 },
+    { from:  1500, to:  1900, step:   5 },
+    { from:  1900, to:  2026, step:   1 }
+  ];
+  SEGMENTS.forEach(s => { s.steps = Math.round((s.to - s.from) / s.step); });
+  const TOTAL = SEGMENTS.reduce((n, s) => n + s.steps, 0);
+
+  function idxToYear(i) {
+    i = Math.max(0, Math.min(TOTAL, i));
+    let acc = 0;
+    for (const s of SEGMENTS) {
+      if (i <= acc + s.steps) return { year: s.from + (i - acc) * s.step, step: s.step };
+      acc += s.steps;
+    }
+    const last = SEGMENTS[SEGMENTS.length - 1];
+    return { year: last.to, step: last.step };
+  }
+
+  function yearToIdx(y) {
+    let acc = 0;
+    for (const s of SEGMENTS) {
+      if (y <= s.to) return acc + Math.round((Math.max(y, s.from) - s.from) / s.step);
+      acc += s.steps;
+    }
+    return TOTAL;
+  }
+
+  function formatYear(year, step) {
+    const approx = step >= 25;
+    const n = Math.abs(year);
+    const suffix = year < 0 ? "BCE" : "CE";
+    return { approx, n, suffix };
+  }
+
+  // ---------- regions ----------
+  const REGIONS = [
+    { id:  1, name: "Western Europe",       lng:   4, lat: 48 },
+    { id:  2, name: "Southern Europe",      lng:  14, lat: 41 },
+    { id:  3, name: "Northern Europe",      lng:  16, lat: 61 },
+    { id:  4, name: "Eastern Europe",       lng:  31, lat: 52 },
+    { id:  5, name: "Anatolia & Levant",    lng:  35, lat: 37 },
+    { id:  6, name: "Mesopotamia & Persia", lng:  49, lat: 33 },
+    { id:  7, name: "Arabia",               lng:  45, lat: 22 },
+    { id:  8, name: "Egypt & the Nile",     lng:  31, lat: 26 },
+    { id:  9, name: "West Africa",          lng:  -2, lat: 13 },
+    { id: 10, name: "East Africa",          lng:  39, lat:  4 },
+    { id: 11, name: "Central Africa",       lng:  19, lat: -4 },
+    { id: 12, name: "Southern Africa",      lng:  26, lat: -26 },
+    { id: 13, name: "South Asia",           lng:  78, lat: 22 },
+    { id: 14, name: "Central Asia",         lng:  66, lat: 43 },
+    { id: 15, name: "East Asia",            lng: 110, lat: 35 },
+    { id: 16, name: "Japan & Korea",        lng: 134, lat: 37 },
+    { id: 17, name: "Southeast Asia",       lng: 105, lat: 11 },
+    { id: 18, name: "Oceania",              lng: 142, lat: -24 },
+    { id: 19, name: "North America",        lng: -99, lat: 40 },
+    { id: 20, name: "Mesoamerica",          lng: -96, lat: 18 },
+    { id: 21, name: "The Andes",            lng: -73, lat: -12 },
+    { id: 22, name: "Amazonia & the Cone",  lng: -57, lat: -25 }
+  ];
+  const REGION_BY_ID = new Map(REGIONS.map(r => [r.id, r]));
+
+  // Dawn order: the sequence in which the sun reaches each region, starting at
+  // the date line and sweeping west. Fixed, so a region holds its place while
+  // the slider moves and you can watch one row fill and empty over time.
+  const REGIONS_BY_SUN = REGIONS.slice().sort((a, b) => b.lng - a.lng || b.lat - a.lat);
+
+  // ---------- data: [name, type, start, end, regionId, notability] ----------
+  const P = "person", T = "polity", E = "event";
+  const RAW = [
+    // Egypt & the Nile
+    ["Old Kingdom Egypt", T, -2686, -2181, 8, 90],
+    ["Djoser's Step Pyramid", E, -2650, -2630, 8, 72],
+    ["Khufu", P, -2589, -2566, 8, 80],
+    ["Middle Kingdom Egypt", T, -2055, -1650, 8, 78],
+    ["New Kingdom Egypt", T, -1550, -1077, 8, 88],
+    ["Hatshepsut", P, -1507, -1458, 8, 84],
+    ["Akhenaten", P, -1380, -1336, 8, 82],
+    ["Ramesses II", P, -1303, -1213, 8, 92],
+    ["Ptolemaic Kingdom", T, -305, -30, 8, 80],
+    ["Library of Alexandria founded", E, -283, -283, 8, 78],
+    ["Cleopatra VII", P, -69, -30, 8, 95],
+    // Mesopotamia & Persia
+    ["Sumerian city-states", T, -3000, -2334, 6, 85],
+    ["Sargon of Akkad", P, -2334, -2279, 6, 78],
+    ["Akkadian Empire", T, -2334, -2154, 6, 80],
+    ["Babylonian Empire", T, -1894, -1595, 6, 84],
+    ["Hammurabi", P, -1810, -1750, 6, 88],
+    ["Assyrian Empire", T, -911, -609, 6, 82],
+    ["Cyrus the Great", P, -600, -530, 6, 88],
+    ["Achaemenid Persia", T, -550, -330, 6, 90],
+    ["Sasanian Empire", T, 224, 651, 6, 82],
+    ["Abbasid Caliphate", T, 750, 1258, 6, 88],
+    ["Baghdad founded", E, 762, 762, 6, 76],
+    ["Al-Khwarizmi", P, 780, 850, 6, 84],
+    ["Ibn Sina (Avicenna)", P, 980, 1037, 6, 88],
+    ["Omar Khayyam", P, 1048, 1131, 6, 82],
+    // South Asia
+    ["Indus Valley Civilisation", T, -3300, -1300, 13, 88],
+    ["Vedic period", T, -1500, -500, 13, 80],
+    ["The Buddha", P, -563, -483, 13, 97],
+    ["Maurya Empire", T, -322, -185, 13, 84],
+    ["Ashoka", P, -304, -232, 13, 88],
+    ["Gupta Empire", T, 320, 550, 13, 80],
+    ["Aryabhata", P, 476, 550, 13, 78],
+    ["Chola Empire", T, 848, 1279, 13, 76],
+    ["Delhi Sultanate", T, 1206, 1526, 13, 78],
+    ["Mughal Empire", T, 1526, 1857, 13, 88],
+    ["Akbar", P, 1542, 1605, 13, 84],
+    ["Taj Mahal completed", E, 1653, 1653, 13, 90],
+    ["Mohandas Gandhi", P, 1869, 1948, 13, 96],
+    // East Asia
+    ["Shang dynasty", T, -1600, -1046, 15, 84],
+    ["Zhou dynasty", T, -1046, -256, 15, 82],
+    ["Laozi", P, -601, -531, 15, 88],
+    ["Confucius", P, -551, -479, 15, 96],
+    ["Qin Shi Huang", P, -259, -210, 15, 90],
+    ["Qin dynasty", T, -221, -206, 15, 84],
+    ["Great Wall begun", E, -221, -206, 15, 86],
+    ["Han dynasty", T, -202, 220, 15, 88],
+    ["Sima Qian", P, -145, -86, 15, 78],
+    ["Tang dynasty", T, 618, 907, 15, 88],
+    ["Li Bai", P, 701, 762, 15, 84],
+    ["Song dynasty", T, 960, 1279, 15, 84],
+    ["Movable type invented", E, 1040, 1048, 15, 82],
+    ["Yuan dynasty", T, 1271, 1368, 15, 80],
+    ["Ming dynasty", T, 1368, 1644, 15, 86],
+    ["Zheng He's treasure voyages", E, 1405, 1433, 15, 84],
+    ["Qing dynasty", T, 1636, 1912, 15, 86],
+    ["Mao Zedong", P, 1893, 1976, 15, 94],
+    // Japan & Korea
+    ["Yayoi period", T, -300, 300, 16, 72],
+    ["Three Kingdoms of Korea", T, -57, 668, 16, 76],
+    ["Prince Shotoku", P, 574, 622, 16, 74],
+    ["Murasaki Shikibu", P, 973, 1031, 16, 82],
+    ["The Tale of Genji written", E, 1008, 1012, 16, 84],
+    ["Kamakura shogunate", T, 1185, 1333, 16, 78],
+    ["Sejong the Great", P, 1397, 1450, 16, 84],
+    ["Hangul promulgated", E, 1446, 1446, 16, 82],
+    ["Tokugawa shogunate", T, 1603, 1868, 16, 84],
+    ["Hokusai", P, 1760, 1849, 16, 86],
+    // Southeast Asia
+    ["Funan", T, 68, 550, 17, 68],
+    ["Srivijaya", T, 671, 1288, 17, 74],
+    ["Khmer Empire", T, 802, 1431, 17, 82],
+    ["Angkor Wat built", E, 1113, 1150, 17, 88],
+    ["Majapahit", T, 1293, 1527, 17, 76],
+    // Anatolia & Levant
+    ["Hittite Empire", T, -1600, -1178, 5, 80],
+    ["Phoenician city-states", T, -1200, -539, 5, 78],
+    ["Byzantine Empire", T, 330, 1453, 5, 88],
+    ["Justinian I", P, 482, 565, 5, 82],
+    ["Hagia Sophia completed", E, 537, 537, 5, 86],
+    ["Ottoman Empire", T, 1299, 1922, 5, 90],
+    ["Fall of Constantinople", E, 1453, 1453, 5, 90],
+    ["Suleiman the Magnificent", P, 1494, 1566, 5, 86],
+    // Southern Europe
+    ["Minoan civilisation", T, -2700, -1450, 2, 80],
+    ["Mycenaean Greece", T, -1750, -1050, 2, 78],
+    ["Roman Republic", T, -509, -27, 2, 90],
+    ["Classical Athens", T, -508, -322, 2, 88],
+    ["Socrates", P, -470, -399, 2, 95],
+    ["Plato", P, -428, -348, 2, 96],
+    ["Aristotle", P, -384, -322, 2, 97],
+    ["Julius Caesar", P, -100, -44, 2, 96],
+    ["Augustus", P, -63, 14, 2, 92],
+    ["Caesar assassinated", E, -44, -44, 2, 88],
+    ["Roman Empire", T, -27, 476, 2, 95],
+    ["Fall of Western Rome", E, 476, 476, 2, 90],
+    ["Dante Alighieri", P, 1265, 1321, 2, 92],
+    ["Leonardo da Vinci", P, 1452, 1519, 2, 98],
+    ["Michelangelo", P, 1475, 1564, 2, 95],
+    ["Galileo Galilei", P, 1564, 1642, 2, 94],
+    // Western Europe
+    ["Charlemagne", P, 748, 814, 1, 90],
+    ["Carolingian Empire", T, 800, 888, 1, 82],
+    ["Kingdom of France", T, 987, 1792, 1, 84],
+    ["Norman conquest of England", E, 1066, 1066, 1, 86],
+    ["Black Death reaches Europe", E, 1347, 1351, 1, 90],
+    ["Gutenberg's printing press", E, 1440, 1450, 1, 92],
+    ["Isaac Newton", P, 1643, 1727, 1, 96],
+    ["Principia published", E, 1687, 1687, 1, 86],
+    ["Industrial Revolution", E, 1760, 1840, 1, 92],
+    ["French Revolution", E, 1789, 1799, 1, 92],
+    ["Marie Curie", P, 1867, 1934, 1, 94],
+    ["Albert Einstein", P, 1879, 1955, 1, 98],
+    // Northern Europe
+    ["Viking Age", E, 793, 1066, 3, 90],
+    ["Kalmar Union", T, 1397, 1523, 3, 72],
+    ["Carl Linnaeus", P, 1707, 1778, 3, 86],
+    // Eastern Europe
+    ["Kievan Rus'", T, 882, 1240, 4, 80],
+    ["Grand Duchy of Lithuania", T, 1236, 1569, 4, 74],
+    ["Nicolaus Copernicus", P, 1473, 1543, 4, 92],
+    ["Russian Empire", T, 1721, 1917, 4, 88],
+    // Central Asia
+    ["Scythians", T, -700, -300, 14, 74],
+    ["Kushan Empire", T, 30, 375, 14, 72],
+    ["Genghis Khan", P, 1162, 1227, 14, 96],
+    ["Genghis Khan proclaimed ruler", E, 1206, 1206, 14, 88],
+    ["Mongol Empire", T, 1206, 1368, 14, 92],
+    ["Timurid Empire", T, 1370, 1507, 14, 78],
+    // Arabia
+    ["Muhammad", P, 570, 632, 7, 98],
+    ["Rashidun Caliphate", T, 632, 661, 7, 84],
+    ["Umayyad Caliphate", T, 661, 750, 7, 84],
+    // West Africa
+    ["Nok culture", T, -1500, 500, 9, 70],
+    ["Ghana Empire", T, 300, 1240, 9, 78],
+    ["Mali Empire", T, 1235, 1670, 9, 84],
+    ["Mansa Musa", P, 1280, 1337, 9, 88],
+    ["Mansa Musa's pilgrimage", E, 1324, 1325, 9, 82],
+    ["Timbuktu manuscript tradition", E, 1400, 1591, 9, 78],
+    ["Songhai Empire", T, 1464, 1591, 9, 78],
+    ["Ashanti Empire", T, 1701, 1901, 9, 76],
+    // East Africa
+    ["Kingdom of Kush", T, -1070, 350, 10, 78],
+    ["Kingdom of Aksum", T, 100, 940, 10, 80],
+    ["Swahili city-states", T, 900, 1500, 10, 76],
+    ["Lalibela's rock-hewn churches", E, 1181, 1221, 10, 80],
+    ["Ethiopian Empire", T, 1270, 1974, 10, 82],
+    // Central Africa
+    ["Kingdom of Kongo", T, 1390, 1914, 11, 78],
+    ["Luba Empire", T, 1585, 1889, 11, 70],
+    // Southern Africa
+    ["Mapungubwe", T, 1075, 1220, 12, 70],
+    ["Great Zimbabwe", T, 1220, 1450, 12, 84],
+    ["Shaka Zulu", P, 1787, 1828, 12, 84],
+    ["Zulu Kingdom", T, 1816, 1897, 12, 80],
+    ["Nelson Mandela", P, 1918, 2013, 12, 97],
+    // Mesoamerica
+    ["Maya Preclassic", T, -2000, 250, 20, 80],
+    ["Olmec civilisation", T, -1500, -400, 20, 80],
+    ["Teotihuacan", T, -100, 550, 20, 82],
+    ["Maya Classic period", T, 250, 900, 20, 86],
+    ["Pakal the Great", P, 603, 683, 20, 80],
+    ["Toltec", T, 900, 1168, 20, 72],
+    ["Aztec Empire", T, 1428, 1521, 20, 88],
+    ["Moctezuma II", P, 1466, 1520, 20, 84],
+    ["Fall of Tenochtitlan", E, 1521, 1521, 20, 86],
+    // The Andes
+    ["Norte Chico (Caral)", T, -3000, -1800, 21, 74],
+    ["Chavín culture", T, -900, -200, 21, 72],
+    ["Moche culture", T, 100, 700, 21, 74],
+    ["Tiwanaku", T, 550, 1000, 21, 74],
+    ["Wari Empire", T, 600, 1000, 21, 72],
+    ["Pachacuti", P, 1418, 1471, 21, 80],
+    ["Inca Empire", T, 1438, 1533, 21, 90],
+    ["Machu Picchu built", E, 1450, 1460, 21, 92],
+    // North America
+    ["Ancestral Puebloans", T, -100, 1300, 19, 78],
+    ["Mississippian culture", T, 800, 1600, 19, 76],
+    ["Cahokia at its peak", E, 1050, 1200, 19, 78],
+    ["Haudenosaunee Confederacy", T, 1142, 1784, 19, 80],
+    ["United States founded", E, 1776, 1776, 19, 94],
+    ["Abraham Lincoln", P, 1809, 1865, 19, 94],
+    ["Apollo 11 Moon landing", E, 1969, 1969, 19, 96],
+    // Amazonia & the Cone
+    ["Marajoara culture", T, 400, 1300, 22, 66],
+    ["Mapuche resistance", E, 1536, 1818, 22, 70],
+    ["Simón Bolívar", P, 1783, 1830, 22, 90],
+    // Oceania
+    ["Lapita culture", T, -1600, -500, 18, 70],
+    ["Polynesian settlement of Hawaii", E, 1000, 1200, 18, 76],
+    ["Māori settlement of Aotearoa", E, 1280, 1350, 18, 78]
+  ];
+
+  // One-line description + Wikipedia title where it differs from the name.
+  // Stands in for the `description` and nullable `wiki_title` columns.
+  const DETAIL = {
+    "Old Kingdom Egypt": ["Age of the great pyramid builders", "Old Kingdom of Egypt"],
+    "Djoser's Step Pyramid": ["First monumental stone building in Egypt", "Pyramid of Djoser"],
+    "Khufu": ["Pharaoh who commissioned the Great Pyramid"],
+    "Middle Kingdom Egypt": ["Egypt reunified after the First Intermediate Period", "Middle Kingdom of Egypt"],
+    "New Kingdom Egypt": ["Egypt at its imperial height", "New Kingdom of Egypt"],
+    "Hatshepsut": ["Female pharaoh of the Eighteenth Dynasty"],
+    "Akhenaten": ["Pharaoh who imposed worship of the Aten"],
+    "Ramesses II": ["Longest-reigning pharaoh of the New Kingdom"],
+    "Ptolemaic Kingdom": ["Greek dynasty ruling Egypt after Alexander"],
+    "Library of Alexandria founded": ["Largest library of the ancient world", "Library of Alexandria"],
+    "Cleopatra VII": ["Last active ruler of Ptolemaic Egypt", "Cleopatra"],
+    "Sumerian city-states": ["World's first cities and written script", "Sumer"],
+    "Sargon of Akkad": ["Founder of the first known empire"],
+    "Akkadian Empire": ["First empire to unite Mesopotamia"],
+    "Babylonian Empire": ["Mesopotamian power centred on Babylon", "First Babylonian dynasty"],
+    "Hammurabi": ["Babylonian king who issued a famous law code"],
+    "Assyrian Empire": ["Militarised empire dominating the Near East", "Neo-Assyrian Empire"],
+    "Cyrus the Great": ["Founder of the Achaemenid Persian Empire"],
+    "Achaemenid Persia": ["Largest empire the world had yet seen", "Achaemenid Empire"],
+    "Sasanian Empire": ["Last Persian empire before Islam"],
+    "Abbasid Caliphate": ["Islamic golden age centred on Baghdad"],
+    "Baghdad founded": ["Round city built as the Abbasid capital", "History of Baghdad"],
+    "Al-Khwarizmi": ["Mathematician who gave his name to 'algorithm'"],
+    "Ibn Sina (Avicenna)": ["Physician and philosopher of the Islamic world", "Avicenna"],
+    "Omar Khayyam": ["Persian poet, astronomer and mathematician"],
+    "Indus Valley Civilisation": ["Planned cities of the Bronze Age subcontinent", "Indus Valley Civilisation"],
+    "Vedic period": ["Era that produced the Vedas"],
+    "The Buddha": ["Founder of Buddhism", "Gautama Buddha"],
+    "Maurya Empire": ["First empire to unify most of the subcontinent"],
+    "Ashoka": ["Mauryan emperor who embraced Buddhism"],
+    "Gupta Empire": ["Classical age of Indian science and art"],
+    "Aryabhata": ["Astronomer who computed π and Earth's rotation"],
+    "Chola Empire": ["Tamil maritime power across the Indian Ocean", "Chola dynasty"],
+    "Delhi Sultanate": ["Muslim sultanates ruling northern India"],
+    "Mughal Empire": ["Empire spanning most of the subcontinent"],
+    "Akbar": ["Mughal emperor known for religious tolerance"],
+    "Taj Mahal completed": ["Mausoleum built by Shah Jahan for his wife", "Taj Mahal"],
+    "Mohandas Gandhi": ["Led Indian independence through nonviolence", "Mahatma Gandhi"],
+    "Shang dynasty": ["Earliest Chinese dynasty with written records"],
+    "Zhou dynasty": ["Longest-lasting Chinese dynasty"],
+    "Laozi": ["Traditional founder of Daoism"],
+    "Confucius": ["Philosopher whose ethics shaped East Asia"],
+    "Qin Shi Huang": ["First emperor to unify China"],
+    "Qin dynasty": ["Short-lived dynasty that unified China"],
+    "Great Wall begun": ["Northern frontier walls joined under Qin", "Great Wall of China"],
+    "Han dynasty": ["Golden age that gave the Han people their name"],
+    "Sima Qian": ["Historian of the Records of the Grand Historian"],
+    "Tang dynasty": ["Cosmopolitan height of Chinese poetry and trade"],
+    "Li Bai": ["Tang poet, among China's most celebrated"],
+    "Song dynasty": ["Era of gunpowder, paper money and porcelain"],
+    "Movable type invented": ["Bi Sheng's ceramic printing type", "Bi Sheng"],
+    "Yuan dynasty": ["Mongol dynasty ruling all of China"],
+    "Ming dynasty": ["Era of the Forbidden City and treasure fleets"],
+    "Zheng He's treasure voyages": ["Seven great fleets across the Indian Ocean", "Zheng He"],
+    "Qing dynasty": ["China's last imperial dynasty"],
+    "Mao Zedong": ["Founding chairman of the People's Republic of China"],
+    "Yayoi period": ["Wet-rice farming and metalwork reach Japan"],
+    "Three Kingdoms of Korea": ["Goguryeo, Baekje and Silla divide the peninsula"],
+    "Prince Shotoku": ["Regent who promoted Buddhism in Japan"],
+    "Murasaki Shikibu": ["Heian court writer and novelist"],
+    "The Tale of Genji written": ["Often called the world's first novel", "The Tale of Genji"],
+    "Kamakura shogunate": ["First warrior government of Japan"],
+    "Sejong the Great": ["Korean king who commissioned Hangul"],
+    "Hangul promulgated": ["Korea's phonetic alphabet published", "Hangul"],
+    "Tokugawa shogunate": ["Two centuries of Japanese seclusion and peace"],
+    "Hokusai": ["Printmaker of The Great Wave"],
+    "Funan": ["Earliest recorded kingdom of the Mekong delta"],
+    "Srivijaya": ["Maritime empire controlling the Malacca Strait"],
+    "Khmer Empire": ["Empire centred on Angkor"],
+    "Angkor Wat built": ["Largest religious monument in the world", "Angkor Wat"],
+    "Majapahit": ["Javanese empire across the archipelago"],
+    "Hittite Empire": ["Anatolian rival of Egypt and Assyria", "Hittites"],
+    "Phoenician city-states": ["Sea traders who spread the alphabet", "Phoenicia"],
+    "Byzantine Empire": ["Eastern Roman Empire, lasting a millennium"],
+    "Justinian I": ["Emperor who codified Roman law"],
+    "Hagia Sophia completed": ["Domed church that redefined architecture", "Hagia Sophia"],
+    "Ottoman Empire": ["Empire spanning three continents for six centuries"],
+    "Fall of Constantinople": ["Ottoman conquest ends the Byzantine Empire"],
+    "Suleiman the Magnificent": ["Ottoman sultan at the empire's height"],
+    "Minoan civilisation": ["Palace culture of Bronze Age Crete", "Minoan civilization"],
+    "Mycenaean Greece": ["Warrior kingdoms of the Greek Bronze Age"],
+    "Roman Republic": ["Rome before the emperors"],
+    "Classical Athens": ["Birthplace of democracy and drama", "History of Athens"],
+    "Socrates": ["Athenian philosopher executed for impiety"],
+    "Plato": ["Founder of the Academy"],
+    "Aristotle": ["Philosopher who systematised the sciences"],
+    "Julius Caesar": ["General whose rule ended the Republic"],
+    "Augustus": ["First Roman emperor"],
+    "Caesar assassinated": ["Killed in the Senate on the Ides of March", "Assassination of Julius Caesar"],
+    "Roman Empire": ["Mediterranean empire at its greatest extent"],
+    "Fall of Western Rome": ["Last western emperor deposed", "Fall of the Western Roman Empire"],
+    "Dante Alighieri": ["Poet of the Divine Comedy"],
+    "Leonardo da Vinci": ["Painter, engineer and anatomist"],
+    "Michelangelo": ["Sculptor and painter of the Sistine Chapel"],
+    "Galileo Galilei": ["Astronomer who argued that the Earth moves"],
+    "Charlemagne": ["King of the Franks crowned Emperor of the Romans"],
+    "Carolingian Empire": ["Frankish empire uniting western Europe"],
+    "Kingdom of France": ["Capetian realm through to the Revolution"],
+    "Norman conquest of England": ["William of Normandy takes the English throne"],
+    "Black Death reaches Europe": ["Plague kills perhaps a third of Europe", "Black Death"],
+    "Gutenberg's printing press": ["Movable type transforms European literacy", "Printing press"],
+    "Isaac Newton": ["Formulated motion and universal gravitation"],
+    "Principia published": ["Newton's laws of motion set out", "Philosophiæ Naturalis Principia Mathematica"],
+    "Industrial Revolution": ["Mechanised production reshapes society"],
+    "French Revolution": ["Monarchy overthrown, republic declared"],
+    "Marie Curie": ["Pioneer of radioactivity, twice a Nobel laureate"],
+    "Albert Einstein": ["Physicist who formulated relativity"],
+    "Viking Age": ["Norse raiding, trading and settlement"],
+    "Kalmar Union": ["Denmark, Norway and Sweden under one crown"],
+    "Carl Linnaeus": ["Founder of modern biological classification"],
+    "Kievan Rus'": ["Slavic federation, ancestor of Russia and Ukraine"],
+    "Grand Duchy of Lithuania": ["At its height the largest state in Europe"],
+    "Nicolaus Copernicus": ["Placed the Sun at the centre of the heavens"],
+    "Russian Empire": ["Empire stretching from Poland to the Pacific"],
+    "Scythians": ["Horse nomads of the Eurasian steppe"],
+    "Kushan Empire": ["Silk Road empire that spread Buddhism"],
+    "Genghis Khan": ["Founder of the largest contiguous land empire"],
+    "Genghis Khan proclaimed ruler": ["Temüjin acclaimed Khan of the Mongols", "Genghis Khan"],
+    "Mongol Empire": ["Largest contiguous empire in history"],
+    "Timurid Empire": ["Turco-Mongol empire centred on Samarkand"],
+    "Muhammad": ["Prophet of Islam"],
+    "Rashidun Caliphate": ["First caliphate after Muhammad"],
+    "Umayyad Caliphate": ["Caliphate stretching from Iberia to India"],
+    "Nok culture": ["Terracotta sculptors and early iron smelters"],
+    "Ghana Empire": ["Trans-Saharan gold and salt trading power"],
+    "Mali Empire": ["West African empire renowned for its wealth"],
+    "Mansa Musa": ["Emperor of Mali, possibly history's richest man"],
+    "Mansa Musa's pilgrimage": ["Hajj so lavish it moved Egypt's gold price", "Mansa Musa"],
+    "Timbuktu manuscript tradition": ["Scholarly libraries of the Niger bend", "Timbuktu Manuscripts"],
+    "Songhai Empire": ["Largest state in West African history"],
+    "Ashanti Empire": ["Akan empire of the gold-rich forest"],
+    "Kingdom of Kush": ["Nubian kingdom that once ruled Egypt"],
+    "Kingdom of Aksum": ["Trading empire that minted its own coinage"],
+    "Swahili city-states": ["Indian Ocean trading ports of the coast", "Swahili coast"],
+    "Lalibela's rock-hewn churches": ["Churches carved downward out of bedrock", "Rock-Hewn Churches, Lalibela"],
+    "Ethiopian Empire": ["Christian empire that resisted colonisation"],
+    "Kingdom of Kongo": ["Central African kingdom that traded with Portugal"],
+    "Luba Empire": ["Savanna empire known for its memory boards"],
+    "Mapungubwe": ["Earliest known state in southern Africa", "Kingdom of Mapungubwe"],
+    "Great Zimbabwe": ["Stone city of a gold-trading kingdom"],
+    "Shaka Zulu": ["King who forged the Zulu into a military power", "Shaka"],
+    "Zulu Kingdom": ["Kingdom that defeated a British army at Isandlwana"],
+    "Nelson Mandela": ["Led the end of apartheid and became president"],
+    "Maya Preclassic": ["Rise of Maya cities and writing", "Preclassic Maya"],
+    "Olmec civilisation": ["Mesoamerica's earliest major culture", "Olmecs"],
+    "Teotihuacan": ["City of pyramids, among the world's largest"],
+    "Maya Classic period": ["Height of Maya astronomy and inscription", "Maya civilization"],
+    "Pakal the Great": ["Ruler of Palenque for 68 years", "K'inich Janaab' Pakal I"],
+    "Toltec": ["Culture the Aztecs claimed as ancestors"],
+    "Aztec Empire": ["Triple Alliance ruling from Tenochtitlan"],
+    "Moctezuma II": ["Aztec emperor at the Spanish arrival"],
+    "Fall of Tenochtitlan": ["Spanish and allied forces take the Aztec capital"],
+    "Norte Chico (Caral)": ["Oldest known civilisation in the Americas", "Caral"],
+    "Chavín culture": ["Andean religious centre and art style", "Chavín culture"],
+    "Moche culture": ["North coast culture of monumental adobe"],
+    "Tiwanaku": ["Highland state on Lake Titicaca"],
+    "Wari Empire": ["Andean empire of roads and terraces"],
+    "Pachacuti": ["Inca ruler who built the empire"],
+    "Inca Empire": ["Largest empire in pre-Columbian America"],
+    "Machu Picchu built": ["Royal estate high in the Andes", "Machu Picchu"],
+    "Ancestral Puebloans": ["Cliff-dwelling builders of the Southwest"],
+    "Mississippian culture": ["Mound-building societies of the river valleys"],
+    "Cahokia at its peak": ["Largest city north of Mexico at the time", "Cahokia"],
+    "Haudenosaunee Confederacy": ["Six Nations league with an oral constitution", "Iroquois"],
+    "United States founded": ["Thirteen colonies declare independence", "United States Declaration of Independence"],
+    "Abraham Lincoln": ["President through the Civil War and emancipation"],
+    "Apollo 11 Moon landing": ["First humans to walk on the Moon", "Apollo 11"],
+    "Marajoara culture": ["Mound-builders of the Amazon delta"],
+    "Mapuche resistance": ["Three centuries holding off Spanish conquest", "Arauco War"],
+    "Simón Bolívar": ["Liberator of much of South America"],
+    "Lapita culture": ["Ancestors of the Polynesian seafarers"],
+    "Polynesian settlement of Hawaii": ["Voyagers reach the Hawaiian islands", "Ancient Hawaii"],
+    "Māori settlement of Aotearoa": ["Polynesian arrival in New Zealand", "Māori people"]
+  };
+
+  // build_prototype.py rewrites this line, inlining dist/mockup_data.json so
+  // the built copy opens from the filesystem with no server and no fetch. Left
+  // null here so this file on its own still runs on the hand-written sample.
+  const LOADED = null; // %%MOCKUP_DATA%%
+
+  // Both shapes are [name, type, start, end, regionId, notability, desc, wiki];
+  // the sample keeps its last two in DETAIL, so fold them in.
+  const SOURCE = LOADED || RAW.map(r => {
+    const d = DETAIL[r[0]] || [];
+    return [r[0], r[1], r[2], r[3], r[4], r[5], d[0] || "", d[1] || null];
+  });
+
+  const ITEMS = SOURCE.map((r, i) => ({
+    id: i, name: r[0], type: r[1], start: r[2], end: r[3], region: r[4], note: r[5],
+    desc: r[6] || "", wiki: r[7] || r[0]
+  }));
+
+  // ---------- era chips ----------
+  const ERAS = [
+    { label: "Bronze Age",    year: -3000 },
+    { label: "Iron Age",      year: -1200 },
+    { label: "Classical",     year:  -500 },
+    { label: "Post-Classical",year:   500 },
+    { label: "1000–1400",     year:  1000 },
+    { label: "1400–1700",     year:  1400 },
+    { label: "1700–1900",     year:  1700 },
+    { label: "Modern",        year:  1900 }
+  ];
+
+  // ---------- coarse landmass polygons [lng, lat] ----------
+  const LAND = [
+    // North America
+    [[-168,66],[-160,71],[-140,70],[-125,70],[-110,69],[-95,70],[-85,73],[-75,78],[-62,70],[-64,60],[-55,52],[-66,45],[-70,42],[-75,36],[-81,31],[-80,25],[-84,30],[-90,29],[-97,26],[-95,18],[-88,21],[-87,16],[-83,9],[-78,8],[-84,10],[-92,15],[-105,20],[-110,24],[-114,31],[-120,34],[-124,40],[-125,48],[-132,55],[-140,60],[-150,59],[-155,58],[-162,55],[-165,60]],
+    // Greenland
+    [[-45,60],[-20,70],[-20,78],[-30,83],[-55,82],[-70,78],[-55,68]],
+    // South America
+    [[-81,8],[-75,11],[-68,11],[-60,8],[-52,5],[-50,0],[-44,-2],[-35,-5],[-38,-13],[-48,-25],[-53,-34],[-58,-38],[-62,-41],[-65,-45],[-68,-52],[-75,-52],[-73,-45],[-72,-38],[-71,-30],[-70,-20],[-75,-14],[-81,-6],[-80,0],[-78,2]],
+    // Africa
+    [[-17,21],[-16,14],[-12,8],[-5,5],[3,6],[9,4],[9,0],[13,-5],[12,-16],[15,-22],[18,-29],[20,-35],[26,-34],[32,-29],[35,-23],[40,-16],[40,-10],[43,-4],[51,2],[51,11],[44,12],[38,16],[35,23],[33,28],[32,31],[25,32],[18,30],[11,33],[3,36],[-2,35],[-6,35],[-10,31],[-14,26]],
+    // Madagascar
+    [[43,-25],[47,-25],[50,-18],[49,-13],[46,-16],[44,-20]],
+    // Europe (continental)
+    [[-10,37],[-9,44],[-1,43],[3,43],[8,44],[14,41],[18,40],[24,41],[28,41],[30,45],[38,45],[42,48],[45,56],[40,62],[33,66],[28,66],[30,70],[22,70],[15,67],[10,63],[12,58],[8,56],[4,51],[-2,48],[-9,44]],
+    // British Isles
+    [[-10,51],[-6,50],[-2,51],[0,53],[-1,56],[-3,59],[-6,58],[-8,55],[-10,54]],
+    // Asia — southern rim incl. India, Arabia, SE Asia peninsula
+    [[42,48],[50,45],[55,42],[62,42],[70,42],[78,42],[88,45],[95,45],[105,42],[112,40],[118,38],[122,32],[122,25],[110,21],[105,20],[100,14],[98,10],[95,16],[90,22],[86,22],[80,15],[76,8],[72,20],[68,24],[62,25],[57,25],[52,18],[45,13],[43,12],[38,16],[35,22],[33,30],[36,36],[40,40],[45,44]],
+    // Asia — northern mass
+    [[42,48],[45,60],[50,68],[60,71],[70,73],[80,74],[95,78],[110,76],[130,73],[150,72],[170,71],[180,69],[178,66],[170,64],[162,60],[158,54],[150,48],[142,45],[135,45],[130,48],[120,50],[105,50],[90,50],[75,50],[60,50],[50,50]],
+    // Japan
+    [[129,32],[134,33],[139,36],[141,39],[143,43],[146,44],[143,41],[139,37],[135,34],[131,32]],
+    // Indonesia / island SE Asia
+    [[95,6],[105,1],[115,-3],[125,-2],[135,-4],[141,-8],[130,-9],[120,-9],[110,-7],[100,1]],
+    // Philippines
+    [[120,6],[126,7],[126,15],[122,18],[120,14]],
+    // Australia
+    [[113,-22],[114,-27],[118,-34],[125,-33],[132,-32],[138,-35],[145,-38],[148,-38],[150,-35],[153,-28],[152,-24],[147,-19],[142,-11],[136,-12],[130,-12],[125,-14],[120,-18]],
+    // New Zealand
+    [[166,-46],[170,-44],[174,-41],[178,-37],[175,-35],[172,-40],[168,-44]]
+  ];
+
+  function pointInPoly(lng, lat, poly) {
+    let inside = false;
+    for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+      const xi = poly[i][0], yi = poly[i][1], xj = poly[j][0], yj = poly[j][1];
+      if (((yi > lat) !== (yj > lat)) && (lng < (xj - xi) * (lat - yi) / (yj - yi) + xi)) inside = !inside;
+    }
+    return inside;
+  }
+
+  // ---------- map rendering ----------
+  const LAT_TOP = 80, LAT_BOT = -58;
+  const canvas = document.getElementById("map");
+  const ctx = canvas.getContext("2d");
+  let W = 0, H = 0, landDots = [];
+
+  function project(lng, lat) {
+    return {
+      x: (lng + 180) / 360 * W,
+      y: (LAT_TOP - lat) / (LAT_TOP - LAT_BOT) * H
+    };
+  }
+
+  function buildLand() {
+    landDots = [];
+    const stepDeg = 3;
+    for (let lat = LAT_TOP; lat >= LAT_BOT; lat -= stepDeg) {
+      for (let lng = -180; lng < 180; lng += stepDeg) {
+        for (const poly of LAND) {
+          if (pointInPoly(lng, lat, poly)) {
+            const p = project(lng, lat);
+            landDots.push(p);
+            break;
+          }
+        }
+      }
+    }
+  }
+
+  function sizeCanvas() {
+    const dpr = window.devicePixelRatio || 1;
+    const rect = canvas.getBoundingClientRect();
+    W = rect.width; H = rect.height;
+    canvas.width = Math.round(W * dpr);
+    canvas.height = Math.round(H * dpr);
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    buildLand();
+  }
+
+  let markers = [];
+
+  function drawMap(counts, selected) {
+    ctx.clearRect(0, 0, W, H);
+
+    // graticule
+    ctx.strokeStyle = "rgba(111,178,201,.055)";
+    ctx.lineWidth = 1;
+    for (let lat = 60; lat >= -40; lat -= 30) {
+      const y = Math.round(project(0, lat).y) + 0.5;
+      ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke();
+    }
+    for (let lng = -120; lng <= 120; lng += 60) {
+      const x = Math.round(project(lng, 0).x) + 0.5;
+      ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, H); ctx.stroke();
+    }
+    // equator slightly stronger
+    ctx.strokeStyle = "rgba(111,178,201,.11)";
+    const eq = Math.round(project(0, 0).y) + 0.5;
+    ctx.beginPath(); ctx.moveTo(0, eq); ctx.lineTo(W, eq); ctx.stroke();
+
+    // land dots
+    ctx.fillStyle = "#27394B";
+    for (const d of landDots) {
+      ctx.beginPath();
+      ctx.arc(d.x, d.y, 1.05, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    // region markers
+    markers = [];
+    for (const r of REGIONS) {
+      const n = counts.get(r.id) || 0;
+      if (n === 0) continue;
+      const p = project(r.lng, r.lat);
+      const rad = Math.min(13, 3.4 + Math.sqrt(n) * 2.3);
+      markers.push({ id: r.id, x: p.x, y: p.y, r: rad });
+
+      const isSel = selected === r.id;
+      const glow = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, rad * 2.4);
+      glow.addColorStop(0, isSel ? "rgba(224,163,64,.45)" : "rgba(224,163,64,.26)");
+      glow.addColorStop(1, "rgba(224,163,64,0)");
+      ctx.fillStyle = glow;
+      ctx.beginPath(); ctx.arc(p.x, p.y, rad * 2.4, 0, Math.PI * 2); ctx.fill();
+
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, rad, 0, Math.PI * 2);
+      ctx.fillStyle = isSel ? "rgba(224,163,64,.95)" : "rgba(224,163,64,.62)";
+      ctx.fill();
+      ctx.lineWidth = isSel ? 1.6 : 1;
+      ctx.strokeStyle = isSel ? "#F5D08A" : "rgba(224,163,64,.9)";
+      ctx.stroke();
+    }
+  }
+
+  // ---------- state & render ----------
+  let selectedRegion = null;
+  const TYPES = new Set([P, T, E]);
+  const TYPE_LABEL = { person: "Person", polity: "Polity", event: "Event" };
+
+  const slider = document.getElementById("slider");
+  const yearLabel = document.getElementById("yearLabel");
+  const rateLabel = document.getElementById("rate");
+  const tally = document.getElementById("tally");
+  const sheetBody = document.getElementById("sheetBody");
+  const sheetTitle = document.getElementById("sheetTitle");
+  const clearBtn = document.getElementById("clearBtn");
+  const chipsEl = document.getElementById("chips");
+  const ticksEl = document.getElementById("ticks");
+  const detailEl = document.getElementById("detail");
+  const searchEl = document.getElementById("search");
+  const searchInput = document.getElementById("searchInput");
+  const searchBody = document.getElementById("searchBody");
+
+  // type filters
+  document.querySelectorAll(".filt").forEach(btn => {
+    btn.addEventListener("click", () => {
+      const t = btn.dataset.type;
+      if (TYPES.has(t)) {
+        if (TYPES.size === 1) return;   // never let all three go dark
+        TYPES.delete(t);
+      } else {
+        TYPES.add(t);
+      }
+      btn.setAttribute("aria-pressed", TYPES.has(t) ? "true" : "false");
+      render();
+    });
+  });
+
+  slider.max = String(TOTAL);
+
+  // era chips
+  ERAS.forEach((era, i) => {
+    const b = document.createElement("button");
+    b.className = "chip";
+    b.type = "button";
+    b.textContent = era.label;
+    b.setAttribute("aria-pressed", "false");
+    b.addEventListener("click", () => {
+      slider.value = String(yearToIdx(era.year));
+      selectedRegion = null;
+      render();
+    });
+    chipsEl.appendChild(b);
+    era.el = b;
+  });
+
+  // slider ticks at segment boundaries
+  [[0, "1 CE"], [1000, "1000"], [1500, "1500"], [1900, "1900"]].forEach(([y, label]) => {
+    const s = document.createElement("span");
+    s.textContent = label;
+    s.style.left = (yearToIdx(y) / TOTAL * 100) + "%";
+    ticksEl.appendChild(s);
+  });
+
+  function render() {
+    const { year, step } = idxToYear(Number(slider.value));
+
+    // year header
+    const f = formatYear(year, step);
+    yearLabel.innerHTML =
+      (f.approx ? '<span class="approx">c.</span>' : "") +
+      f.n +
+      '<span class="era-suffix">' + f.suffix + "</span>";
+    rateLabel.textContent = step === 1 ? "1 yr / step" : step + " yr / step";
+
+    // active items — overlap against the step window, not a point, so that
+    // single-year events can't fall between slider steps
+    const active = ITEMS.filter(it =>
+      TYPES.has(it.type) && it.start < year + step && it.end >= year);
+    const counts = new Map();
+    for (const it of active) counts.set(it.region, (counts.get(it.region) || 0) + 1);
+
+    tally.innerHTML = "<b>" + active.length + "</b> entries<br>" +
+      counts.size + " regions active";
+
+    drawMap(counts, selectedRegion);
+
+    // chips highlight
+    let activeEra = 0;
+    ERAS.forEach((e, i) => { if (year >= e.year) activeEra = i; });
+    ERAS.forEach((e, i) => e.el.setAttribute("aria-pressed", i === activeEra ? "true" : "false"));
+
+    // sheet
+    sheetBody.innerHTML = "";
+    clearBtn.hidden = selectedRegion === null;
+
+    if (selectedRegion !== null) {
+      sheetTitle.textContent = REGION_BY_ID.get(selectedRegion).name;
+    } else {
+      sheetTitle.textContent = "Everywhere at once";
+    }
+
+    const groups = [];
+    for (const r of REGIONS_BY_SUN) {
+      if (selectedRegion !== null && r.id !== selectedRegion) continue;
+      const list = active.filter(it => it.region === r.id)
+                         .sort((a, b) => b.note - a.note);
+      if (list.length) groups.push({ region: r, list });
+    }
+
+    if (!groups.length) {
+      const d = document.createElement("div");
+      d.className = "empty";
+      d.textContent = selectedRegion !== null
+        ? "Nothing recorded here at this moment."
+        : "No entries at this year — the deep past is thin, which is itself the finding.";
+      sheetBody.appendChild(d);
+      return;
+    }
+
+    const limit = selectedRegion !== null ? 40 : 4;
+    for (const g of groups) {
+      const card = document.createElement("div");
+      card.className = "rcard";
+
+      const head = document.createElement("div");
+      head.className = "rcard-head";
+      head.innerHTML = '<span class="rname"></span><span class="rcount"></span>';
+      head.querySelector(".rname").textContent = g.region.name;
+      head.querySelector(".rcount").textContent =
+        g.list.length + (g.list.length === 1 ? " entry" : " entries");
+      card.appendChild(head);
+
+      g.list.slice(0, limit).forEach(it => {
+        card.appendChild(entryRow(it));
+      });
+
+      if (g.list.length > limit) {
+        const m = document.createElement("div");
+        m.className = "more";
+        m.textContent = "+" + (g.list.length - limit) + " more";
+        card.appendChild(m);
+      }
+
+      sheetBody.appendChild(card);
+    }
+  }
+
+  // ---------- search ----------
+  const TRY = ["Confucius", "Hatshepsut", "Murasaki Shikibu", "Mansa Musa", "Pachacuti", "1492"];
+
+  function parseYear(q) {
+    const m = /^\s*(-?\d{1,4})\s*(bce|bc|ce|ad)?\s*$/i.exec(q);
+    if (!m) return null;
+    let y = parseInt(m[1], 10);
+    const era = (m[2] || "").toLowerCase();
+    if (era.charAt(0) === "b") y = -Math.abs(y);
+    if (y < -3000 || y > 2026) return null;
+    return y;
+  }
+
+  function openSearch() {
+    searchEl.hidden = false;
+    searchInput.value = "";
+    renderSearch("");
+    searchInput.focus();
+  }
+  function closeSearch() { searchEl.hidden = true; }
+
+  function renderSearch(q) {
+    searchBody.innerHTML = "";
+    q = q.trim();
+
+    if (!q) {
+      const lab = document.createElement("div");
+      lab.className = "try-label";
+      lab.textContent = "Search anyone, any state, any event — or type a year to jump the timeline there.";
+      const row = document.createElement("div");
+      row.className = "try-row";
+      TRY.forEach(name => {
+        const b = document.createElement("button");
+        b.type = "button";
+        b.className = "try";
+        b.textContent = name;
+        b.addEventListener("click", () => {
+          searchInput.value = name;
+          renderSearch(name);
+        });
+        row.appendChild(b);
+      });
+      searchBody.append(lab, row);
+      return;
+    }
+
+    // a year jumps the timeline
+    const y = parseYear(q);
+    if (y !== null) {
+      const snapped = idxToYear(yearToIdx(y)).year;
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "yearjump";
+      const l = document.createElement("span");
+      l.textContent = "Go to " + yr(y);
+      const hint = document.createElement("span");
+      hint.textContent = snapped === y ? "on the timeline" : "nearest step: " + yr(snapped);
+      btn.append(l, hint);
+      btn.addEventListener("click", () => {
+        slider.value = String(yearToIdx(y));
+        selectedRegion = null;
+        closeSearch();
+        render();
+      });
+      searchBody.appendChild(btn);
+    }
+
+    const ql = q.toLowerCase();
+    const hits = ITEMS
+      .filter(it => it.name.toLowerCase().includes(ql) || it.desc.toLowerCase().includes(ql))
+      .sort((a, b) => {
+        const ap = a.name.toLowerCase().startsWith(ql) ? 0 : 1;
+        const bp = b.name.toLowerCase().startsWith(ql) ? 0 : 1;
+        return ap - bp || b.note - a.note;
+      })
+      .slice(0, 30);
+
+    if (!hits.length && y === null) {
+      const e = document.createElement("div");
+      e.className = "empty";
+      e.textContent = "No match for “" + q + "”.";
+      searchBody.appendChild(e);
+      return;
+    }
+
+    [[P, "People"], [T, "States & cultures"], [E, "Events"]].forEach(([type, label]) => {
+      const list = hits.filter(h => h.type === type);
+      if (!list.length) return;
+      const t = document.createElement("div");
+      t.className = "sgroup-title";
+      t.textContent = label + " · " + list.length;
+      searchBody.appendChild(t);
+      list.forEach(it => searchBody.appendChild(searchRow(it)));
+    });
+  }
+
+  function searchRow(it) {
+    const b = document.createElement("button");
+    b.type = "button";
+    b.className = "sresult";
+    const dot = document.createElement("span");
+    dot.className = "dot " + it.type;
+    const txt = document.createElement("span");
+    const nm = document.createElement("b");
+    nm.textContent = it.name;
+    const meta = document.createElement("em");
+    meta.textContent = REGION_BY_ID.get(it.region).name + " · " + spanLabel(it);
+    txt.append(nm, meta);
+    b.append(dot, txt);
+    b.addEventListener("click", () => openDetail(it));
+    return b;
+  }
+
+  document.querySelector(".search-ico").addEventListener("click", openSearch);
+  document.getElementById("searchClose").addEventListener("click", closeSearch);
+  searchInput.addEventListener("input", () => renderSearch(searchInput.value));
+  document.addEventListener("keydown", (e) => {
+    if (e.key !== "Escape") return;
+    if (!detailEl.hidden) closeDetail();
+    else if (!searchEl.hidden) closeSearch();
+  });
+
+  function entryRow(it) {
+    const row = document.createElement("button");
+    row.type = "button";
+    row.className = "entry";
+    const dot = document.createElement("span");
+    dot.className = "dot " + it.type;
+    const nm = document.createElement("span");
+    nm.className = "ename";
+    nm.textContent = it.name;
+    const sp = document.createElement("span");
+    sp.className = "espan";
+    sp.textContent = spanLabel(it);
+    row.append(dot, nm, sp);
+    row.addEventListener("click", () => openDetail(it));
+    return row;
+  }
+
+  // ---------- detail screen ----------
+  function openDetail(it) {
+    detailEl.innerHTML = "";
+
+    const bar = document.createElement("div");
+    bar.className = "detail-bar";
+    const back = document.createElement("button");
+    back.type = "button";
+    back.className = "backbtn";
+    back.innerHTML = '<svg width="11" height="11" viewBox="0 0 16 16" fill="none" aria-hidden="true">' +
+      '<path d="M10 3L5 8l5 5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg> back';
+    back.addEventListener("click", closeDetail);
+    const kind = document.createElement("span");
+    kind.className = "kind " + it.type;
+    kind.textContent = TYPE_LABEL[it.type];
+    bar.append(back, kind);
+
+    const body = document.createElement("div");
+    body.className = "detail-body";
+
+    const h = document.createElement("div");
+    h.className = "dname";
+    h.textContent = it.name;
+    body.appendChild(h);
+
+    if (it.desc) {
+      const d = document.createElement("div");
+      d.className = "ddesc";
+      d.textContent = it.desc;
+      body.appendChild(d);
+    }
+
+    const span = document.createElement("div");
+    span.className = "dspan";
+    const years = it.end - it.start;
+    span.innerHTML = "";
+    span.appendChild(document.createTextNode(spanLabel(it)));
+    if (years > 0) {
+      const em = document.createElement("em");
+      em.textContent = (it.type === P ? "lived " : "lasted ") + years + " years";
+      span.appendChild(em);
+    }
+    body.appendChild(span);
+
+    // facts
+    const dl = document.createElement("dl");
+    dl.className = "facts";
+    const region = REGION_BY_ID.get(it.region);
+    addFact(dl, "Region", region.name);
+
+    if (it.type === P) {
+      const overlap = o => Math.min(o.end, it.end) - Math.max(o.start, it.start);
+      const states = ITEMS.filter(o =>
+        o.type === T && o.region === it.region &&
+        o.start < it.end && o.end > it.start
+      ).sort((a, b) => overlap(b) - overlap(a)).slice(0, 2);
+      if (states.length) {
+        addFact(dl, "States", states.map(s => s.name + " (" + overlap(s) + "y)").join(", "));
+      }
+    }
+    addFact(dl, "Precision", it.start <= -500 ? "approximate — century-level in the source"
+                                              : "dated");
+    body.appendChild(dl);
+
+    // jump to timeline
+    const jump = document.createElement("button");
+    jump.type = "button";
+    jump.className = "jumpbtn";
+    jump.textContent = "Show " + spanLabel(it) + " on the timeline";
+    jump.addEventListener("click", () => {
+      slider.value = String(yearToIdx(it.start));
+      selectedRegion = null;
+      closeDetail();
+      closeSearch();          // the jump lands on the timeline, so clear both overlays
+      render();
+    });
+    body.appendChild(jump);
+
+    // contemporaries
+    const isPerson = it.type === P;
+    const t = document.createElement("div");
+    t.className = "sec-title";
+    t.textContent = { person: "Alive at the same time",
+                      polity:  "Other states at the same time",
+                      event:   "Other events at the same time" }[it.type];
+    body.appendChild(t);
+
+    const note = document.createElement("div");
+    note.className = "sec-note";
+    note.textContent = isPerson
+      ? "Overlapping lifetimes, both adult at once — grouped by region, most notable first."
+      : "Overlapping this span, grouped by region.";
+    body.appendChild(note);
+
+    // same type only, so the list stays readable
+    const peers = ITEMS.filter(o => {
+      if (o.id === it.id || o.type !== it.type) return false;
+      if (isPerson) return o.start + 15 <= it.end && o.end >= it.start + 15;
+      return o.start < it.end + 1 && o.end >= it.start;
+    });
+
+    let shown = 0;
+    for (const r of REGIONS_BY_SUN) {
+      const list = peers.filter(o => o.region === r.id).sort((a, b) => b.note - a.note);
+      if (!list.length) continue;
+      const g = document.createElement("div");
+      g.className = "cgroup";
+      const gn = document.createElement("div");
+      gn.className = "cgroup-name";
+      gn.textContent = r.name;
+      g.appendChild(gn);
+      list.slice(0, 3).forEach(o => { g.appendChild(entryRow(o)); shown++; });
+      if (list.length > 3) {
+        const m = document.createElement("div");
+        m.className = "more";
+        m.textContent = "+" + (list.length - 3) + " more";
+        g.appendChild(m);
+      }
+      body.appendChild(g);
+    }
+    if (!shown) {
+      const e = document.createElement("div");
+      e.className = "empty";
+      e.textContent = isPerson
+        ? "Nobody else in the dataset was alive alongside them."
+        : "Nothing else of this kind overlaps this span.";
+      body.appendChild(e);
+    }
+
+    // wikipedia handoff
+    const link = document.createElement("a");
+    link.className = "wikilink";
+    link.href = "https://en.wikipedia.org/wiki/" + encodeURIComponent(it.wiki.replace(/ /g, "_"));
+    link.target = "_blank";
+    link.rel = "noopener noreferrer";
+    const linkText = document.createElement("span");
+    linkText.textContent = "Read more about " + it.name + " on Wikipedia";
+    const linkHint = document.createElement("span");
+    linkHint.textContent = "↗";
+    link.append(linkText, linkHint);
+    body.appendChild(link);
+
+    const off = document.createElement("div");
+    off.className = "offline-note";
+    off.textContent = "Everything above works offline";
+    body.appendChild(off);
+
+    detailEl.append(bar, body);
+    detailEl.hidden = false;
+  }
+
+  function addFact(dl, label, value) {
+    const dt = document.createElement("dt");
+    dt.textContent = label;
+    const dd = document.createElement("dd");
+    dd.textContent = value;
+    dl.append(dt, dd);
+  }
+
+  function closeDetail() { detailEl.hidden = true; detailEl.innerHTML = ""; }
+
+  function yr(y) { return y < 0 ? Math.abs(y) + " BCE" : String(y); }
+  function spanLabel(it) {
+    if (it.start === it.end) return yr(it.start);
+    return yr(it.start) + "–" + (it.end < 0 ? Math.abs(it.end) + " BCE" : String(it.end));
+  }
+
+  // map tap → filter to region
+  canvas.addEventListener("click", (ev) => {
+    const rect = canvas.getBoundingClientRect();
+    const x = ev.clientX - rect.left, y = ev.clientY - rect.top;
+    let best = null, bestD = 22;
+    for (const m of markers) {
+      const d = Math.hypot(m.x - x, m.y - y);
+      if (d < Math.max(m.r + 6, bestD)) { if (d < bestD) { bestD = d; best = m; } }
+    }
+    selectedRegion = best ? (selectedRegion === best.id ? null : best.id) : null;
+    render();
+  });
+
+  clearBtn.addEventListener("click", () => { selectedRegion = null; render(); });
+  slider.addEventListener("input", () => { render(); });
+  window.addEventListener("resize", () => { sizeCanvas(); render(); });
+
+  // boot near 1210 CE — Genghis Khan, Delhi Sultanate, Song China, Great Zimbabwe
+  sizeCanvas();
+  slider.value = String(yearToIdx(1210));
+  render();
+})();
+</script>

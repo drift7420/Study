@@ -156,8 +156,18 @@ what the app shows.
 Its second version borrowed the extraction query whole, and that was still too
 much: the extraction query carries labels, descriptions, an article link and
 three optional dates because the app needs them, and at a floor of 1 there are
-several times as many rows to carry all of it on. The join order was what was
-worth borrowing. The query now selects two columns.
+several times as many rows to carry all of it on. Cut to two columns, the query
+finally ran — and WDQS cut the transfer three times mid-stream, twenty thousand
+rows in. A successful query whose answer will not arrive is a different problem
+from a refusal, and not one a smaller SELECT solves.
+
+So the counting happens on the server: one aggregate query returning a few
+hundred rows, grouped by country of citizenship, and a second small query to
+place those countries. Two caveats come with that. People with no citizenship
+recorded are missing, and if citizenship is recorded less often for the thinly
+covered, that biases the population being measured. And every citizen of a
+state lands where that state's coordinate puts it. Neither distorts the share
+on each side of the floor within a region, which is the question.
 
 **Region boxes are ordered.** First match wins, so the list runs specific to
 general: East Asia before Southeast Asia or Guangzhou lands in the wrong one;

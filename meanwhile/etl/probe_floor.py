@@ -24,13 +24,25 @@ window while English timed out on a single year. Narrowing the window could
 not help, and asking per region rather than per edition is the better question
 anyway — regions are what the app shows.
 
-The join structure here is the extraction query's, which is the one shape
-WDQS reliably answers: lead with the date, then narrow by type and sitelinks.
-The payload is not. The extraction query also asks for labels, descriptions,
-an article link and three optional date properties, because the app needs
-them — and at a floor of 1 it returns several times as many rows to carry all
-that on. That combination still came back 504. This asks for the QID and the
-sitelink count and nothing else.
+Nothing here streams a row per person. Two columns for every human born in
+a single year is still some twenty thousand rows and three megabytes, and
+WDQS cut the transfer three times at three different points — a successful
+query whose answer would not arrive, which is a different failure from the
+refusals before it and not one a smaller SELECT fixes.
+
+So the counting happens on the server. One aggregate query returns a few
+hundred rows: per country of citizenship, how many people fall on each side
+of the floor. A second small query places those countries, and the regions
+are folded up here.
+
+Two caveats that come with counting by citizenship, both worth holding in
+mind when reading the table. People with no P27 recorded are missing
+entirely, and if citizenship is itself recorded less often for the
+thinly-covered, that biases the very population being measured. And every
+citizen of a state lands wherever that state's coordinate puts it, so a large
+or mobile polity concentrates its people in one region. Neither distorts the
+*share* on each side of the floor within a region, which is what the question
+asks.
 
 Usage:
     python probe_floor.py --contact you@example.com
@@ -47,79 +59,87 @@ import regions as regions_mod
 
 FLOOR = extract.MIN_SITELINKS["person"]
 
-# Two columns. The floor question needs a QID to place and a count to compare
-# against the floor; everything else the extraction query returns is for the
-# app, and at a floor of 1 there are several times as many rows to carry it on.
+# Counted on the server, grouped by citizenship: a few hundred rows instead
+# of one per person. The join order is still the extraction query's — lead
+# with the date, then narrow — because that is the part that makes WDQS
+# willing to answer at all.
 QUERY = """
-SELECT ?item ?sitelinks WHERE {
+SELECT ?country ?bucket (COUNT(*) AS ?n) WHERE {
   ?item wdt:P569 ?driver .
   %DATEFILTER%
-  ?item wdt:P31 wd:Q5 ; wikibase:sitelinks ?sitelinks .
+  ?item wdt:P31 wd:Q5 ; wikibase:sitelinks ?sitelinks ; wdt:P27 ?country .
+  BIND(IF(?sitelinks >= %FLOOR%, "visible", "hidden") AS ?bucket)
 }
+GROUP BY ?country ?bucket
 """
 
 
 def query_for(low, high):
-    return QUERY.replace("%DATEFILTER%", extract.date_filter(low, high))
+    return (QUERY
+            .replace("%DATEFILTER%", extract.date_filter(low, high))
+            .replace("%FLOOR%", str(FLOOR)))
 
 
 def fetch_window(low, high, contact, cache_dir):
-    """Every person born in [low, high) with at least one sitelink."""
+    """[(country qid, bucket, count)] for births in [low, high)."""
     cache_dir.mkdir(parents=True, exist_ok=True)
-    cached = cache_dir / f"floor-person-{low}-{high}.json"
+    cached = cache_dir / f"floor-{low}-{high}.json"
     if cached.exists():
         print(f"  {low}-{high}: cached")
         return json.loads(cached.read_text(encoding="utf-8"))
 
-    print(f"  {low}-{high}: querying every birth with 1+ sitelinks…")
+    print(f"  {low}-{high}: counting births by citizenship…")
     payload = extract.run_query(query_for(low, high), contact)
-    records = [{"qid": extract.cell(b, "item").rsplit("/", 1)[-1],
-                "sitelinks": int(extract.cell(b, "sitelinks") or 0),
-                "lat": None, "lng": None, "location_source": None}
-               for b in payload["results"]["bindings"]]
-    cached.write_text(json.dumps(records), encoding="utf-8")
-    print(f"  {low}-{high}: {len(records)} people")
-    return records
+    rows = [(extract.cell(b, "country").rsplit("/", 1)[-1],
+             extract.cell(b, "bucket"),
+             int(extract.cell(b, "n") or 0))
+            for b in payload["results"]["bindings"]]
+    cached.write_text(json.dumps(rows), encoding="utf-8")
+    print(f"  {low}-{high}: {len(rows)} country/bucket rows, "
+          f"{sum(n for _, _, n in rows)} people")
+    return rows
 
 
-def place(records, contact, cache_dir):
-    ordered = extract.by_notability(records)
-    print(f"  placing {len(ordered)} people…")
-    coordinates, failed = extract.fetch_coordinates(ordered, "person", contact, cache_dir)
-    extract.merge_coordinates(records, coordinates)
+def place(rows, contact, cache_dir):
+    """{country qid: region id}, by the polity rule — capital, own
+    coordinate, then country. A handful of requests, not thousands."""
+    countries = sorted({country for country, _, _ in rows})
+    print(f"  placing {len(countries)} countries…")
+    coordinates, failed = extract.fetch_coordinates(
+        countries, "polity", contact, cache_dir)
     if failed:
-        print(f"  {len(failed)} could not be asked about; they are left out")
-    return records
+        print(f"  {len(failed)} could not be asked about; their people are left out")
+
+    placed = {}
+    for country, point in coordinates.items():
+        region_id, _ = regions_mod.assign(point[0], point[1])
+        if region_id is not None:
+            placed[country] = region_id
+    print(f"  {len(placed)}/{len(countries)} countries placed")
+    return placed
 
 
-def tally(records):
+def tally(rows, placed):
     """{region_id: (below the floor, at or above it)}.
 
-    Placed by the pipeline's own rule — a coordinate or nothing — so this
-    describes the population the app would actually have, not every row
-    Wikidata returned.
+    A country the coordinate pass could not place takes its people with it,
+    the same way the pipeline drops anything it cannot put on the map.
     """
-    best = {}
-    for record in records:
-        region_id, _ = regions_mod.assign(record.get("lat"), record.get("lng"))
+    counts = {}
+    for country, bucket, n in rows:
+        region_id = placed.get(country)
         if region_id is None:
             continue
-        notability = int(record.get("sitelinks") or 0)
-        if notability > best.get(record["qid"], (None, -1))[1]:
-            best[record["qid"]] = (region_id, notability)
-
-    counts = {}
-    for region_id, notability in best.values():
         hidden, visible = counts.get(region_id, (0, 0))
-        counts[region_id] = ((hidden + 1, visible) if notability < FLOOR
-                             else (hidden, visible + 1))
+        counts[region_id] = ((hidden + n, visible) if bucket == "hidden"
+                             else (hidden, visible + n))
     return counts
 
 
 def report(counts, low, high):
     total_hidden = sum(h for h, _ in counts.values())
     total_visible = sum(v for _, v in counts.values())
-    print(f"\npeople born {low}-{high - 1}, placed by region\n"
+    print(f"\npeople born {low}-{high - 1}, by the region of their citizenship\n"
           f"'hidden' means fewer than {FLOOR} sitelinks — never fetched by a real run\n")
     print("region".ljust(22) + "total".rjust(8) + "hidden".rjust(8)
           + "visible".rjust(9) + "  share hidden")
@@ -156,8 +176,8 @@ def main():
 
     low, high = args.start, args.start + args.span
     cache_dir = Path(args.cache)
-    records = fetch_window(low, high, args.contact, cache_dir)
-    report(tally(place(records, args.contact, cache_dir)), low, high)
+    rows = fetch_window(low, high, args.contact, cache_dir)
+    report(tally(rows, place(rows, args.contact, cache_dir)), low, high)
 
 
 if __name__ == "__main__":

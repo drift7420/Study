@@ -1309,13 +1309,22 @@
     "Māori settlement of Aotearoa": ["Polynesian arrival in New Zealand", "Māori people"]
   };
 
-  const ITEMS = RAW.map((r, i) => {
+  // build_prototype.py rewrites this line, inlining dist/mockup_data.json so
+  // the built copy opens from the filesystem with no server and no fetch. Left
+  // null here so this file on its own still runs on the hand-written sample.
+  const LOADED = null; // %%MOCKUP_DATA%%
+
+  // Both shapes are [name, type, start, end, regionId, notability, desc, wiki];
+  // the sample keeps its last two in DETAIL, so fold them in.
+  const SOURCE = LOADED || RAW.map(r => {
     const d = DETAIL[r[0]] || [];
-    return {
-      id: i, name: r[0], type: r[1], start: r[2], end: r[3], region: r[4], note: r[5],
-      desc: d[0] || "", wiki: d[1] || r[0]
-    };
+    return [r[0], r[1], r[2], r[3], r[4], r[5], d[0] || "", d[1] || null];
   });
+
+  const ITEMS = SOURCE.map((r, i) => ({
+    id: i, name: r[0], type: r[1], start: r[2], end: r[3], region: r[4], note: r[5],
+    desc: r[6] || "", wiki: r[7] || r[0]
+  }));
 
   // ---------- era chips ----------
   const ERAS = [

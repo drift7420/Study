@@ -33,10 +33,15 @@ python extract.py --type event  --out raw/event.json  --contact you@example.com
 
 # 2 + 3. normalise, build the database, print the coverage report
 python build_db.py --raw raw --out dist/meanwhile.db
+
+# 4. put the real slice into a copy of the prototype and open it
+python build_prototype.py
 ```
 
-`build_db.py` also writes `dist/mockup_data.json`, a trimmed slice the HTML
-prototype can load in place of its hand-written sample.
+`build_db.py` also writes `dist/mockup_data.json`, a slice sampled per region
+per era; `build_prototype.py` inlines it into `dist/prototype.html`, which
+opens from the filesystem with no server. `prototype.html` itself still runs on
+its hand-written sample, so it stays viewable without a build.
 
 ## Stages
 
@@ -48,10 +53,11 @@ prototype can load in place of its hand-written sample.
 | `transform.py` | Raw records to rows: spans, confidence, thresholds | Yes |
 | `build_db.py` | SQLite + FTS5 + indexes, coverage report, prototype JSON | Yes |
 | `thresholds.py` | What each notability cutoff would admit, per region | Yes |
-| `probe_floor.py` | What the sitelink floor hides, by region | Yes |
+| `probe_floor.py` | What the sitelink floor hides, by region — **unanswered** | Yes |
+| `build_prototype.py` | Inlines the real slice into a copy of the prototype | Yes |
 
 ```bash
-python -m pytest tests/ -q      # 126 tests
+python -m pytest tests/ -q      # 132 tests
 ```
 
 ### extract.py is the stage the network shapes
@@ -161,13 +167,28 @@ finally ran — and WDQS cut the transfer three times mid-stream, twenty thousan
 rows in. A successful query whose answer will not arrive is a different problem
 from a refusal, and not one a smaller SELECT solves.
 
-So the counting happens on the server: one aggregate query returning a few
+So the counting moved to the server: one aggregate query returning a few
 hundred rows, grouped by country of citizenship, and a second small query to
 place those countries. Two caveats come with that. People with no citizenship
 recorded are missing, and if citizenship is recorded less often for the thinly
 covered, that biases the population being measured. And every citizen of a
 state lands where that state's coordinate puts it. Neither distorts the share
 on each side of the floor within a region, which is the question.
+
+**That version was refused too, and the question is still open.** Five shapes
+were tried over three days — per edition at a decade, per edition narrowing to
+one year, the extraction query borrowed whole, two bare columns, and finally a
+server-side aggregate of a few hundred rows. The last of them is small by any
+measure and WDQS returned 504, 502 and 503 to it. Over the same days the
+endpoint also began refusing extraction windows it had answered earlier in the
+week, so the most likely reading is that the service is unwell rather than that
+the query is wrong. `probe_floor.py` is left in the repository because the
+question is worth answering when WDQS recovers, and because what it costs is
+now three small requests.
+
+Until then, what the coverage table shows should be read as *the part of
+Wikidata above four sitelinks*, and the 40:1 early-modern gap between Western
+Europe and East Asia is not known to be the source's rather than the floor's.
 
 **Region boxes are ordered.** First match wins, so the list runs specific to
 general: East Asia before Southeast Asia or Guangzhou lands in the wrong one;

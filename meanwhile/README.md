@@ -48,7 +48,7 @@ prototype can load in place of its hand-written sample.
 | `transform.py` | Raw records to rows: spans, confidence, thresholds | Yes |
 | `build_db.py` | SQLite + FTS5 + indexes, coverage report, prototype JSON | Yes |
 | `thresholds.py` | What each notability cutoff would admit, per region | Yes |
-| `probe_floor.py` | How much each language's history the sitelink floor hides | Yes |
+| `probe_floor.py` | What the sitelink floor hides, by region | Yes |
 
 ```bash
 python -m pytest tests/ -q      # 126 tests
@@ -139,10 +139,19 @@ is ~40:1 at *every* cutoff from 4 sitelinks to 30. Relaxing the bar scales both
 sides equally.
 
 What remains untested is the extraction floor itself. `extract.py` fetches
-nothing below 4 sitelinks, and a figure covered only by zh.wikipedia has one,
-so the whole coverage table describes only the part of Wikidata above a line
-drawn in a unit that counts languages. `probe_floor.py` asks Wikidata directly
-what share of each edition's biographies clear that line.
+nothing below 4 sitelinks, and a figure covered by one language has one, so the
+whole coverage table describes only the part of Wikidata above a line drawn in
+a unit that counts languages. `probe_floor.py` fetches a short window of births
+with the floor dropped to 1, places them by region, and reports what share of
+each region sits below it.
+
+It asked this per Wikipedia edition first, joining each item to
+`?article schema:isPartOf <https://xx.wikipedia.org/>`. That join costs what
+the *edition* costs rather than what the window costs: Swahili answered a
+ten-year window while English timed out on a single year, so narrowing the
+window — the obvious fix, and the one tried first — could not have worked.
+Asking per region is both cheaper and the better question, since regions are
+what the app shows.
 
 **Region boxes are ordered.** First match wins, so the list runs specific to
 general: East Asia before Southeast Asia or Guangzhou lands in the wrong one;

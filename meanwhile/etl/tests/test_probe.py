@@ -12,6 +12,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 import extract
 import probe_floor
+import regions
+import transform as tf
 
 
 def test_the_floor_is_read_from_extract_not_repeated():
@@ -20,69 +22,62 @@ def test_the_floor_is_read_from_extract_not_repeated():
     assert probe_floor.FLOOR == extract.MIN_SITELINKS["person"]
 
 
-def test_the_window_is_bounded_on_both_sides():
-    query = probe_floor.query_for("zh", 1800, 10)
-    assert '?driver >= "1800-01-01T00:00:00Z"' in query
-    assert '?driver < "1810-01-01T00:00:00Z"' in query
+def test_the_probe_asks_below_the_floor():
+    """The whole point is seeing what a real run never fetches."""
+    query = extract.main_query("person", "P569", 1800, 1802, min_sitelinks=1)
+    assert "FILTER(?sitelinks >= 1)" in query
 
 
-def test_it_leads_with_the_date_filter():
-    """Same reason every other query does: starting from wd:Q5 scans every
-    human in Wikidata before anything narrows it."""
-    query = probe_floor.query_for("zh", 1800, 10)
-    assert query.index("FILTER(?driver") < query.index("wd:Q5")
+def test_the_real_extraction_floor_is_untouched():
+    query = extract.main_query("person", "P569", 1800, 1802)
+    assert f"FILTER(?sitelinks >= {extract.MIN_SITELINKS['person']})" in query
 
 
-def test_the_edition_is_substituted_everywhere():
-    query = probe_floor.query_for("ja", 1800, 10)
-    assert "https://ja.wikipedia.org/" in query
-    assert "%" not in query
+def test_it_reuses_the_query_shape_that_works():
+    """Asking per Wikipedia edition cost what the edition cost, not what the
+    window cost: Swahili answered ten years while English timed out on one."""
+    query = extract.main_query("person", "P569", 1800, 1802, min_sitelinks=1)
+    assert "schema:isPartOf" not in query.replace(
+        "?article schema:about ?item ; schema:isPartOf <https://en.wikipedia.org/>", "")
 
 
-def test_a_slow_edition_narrows_its_own_window(monkeypatch):
-    """zh, fr, de and en all timed out at a decade, which was most of the
-    comparison. A share measured over two years still answers the question."""
-    spans = []
-
-    def fake(sparql, contact, retries=4):
-        span = 1 if '< "1801-' in sparql else 10 if '< "1810-' in sparql else 0
-        spans.append(sparql)
-        if '< "1810-' in sparql or '< "1805-' in sparql:
-            raise RuntimeError("504 Gateway Timeout")
-        return {"results": {"bindings": [
-            {"bucket": {"value": "visible"}, "n": {"value": "7"}}]}}
-
-    monkeypatch.setattr(probe_floor.extract, "run_query", fake)
-    found, years, error = probe_floor.probe_edition("zh", 1800, 10, "c")
-    assert error is None
-    assert years == 2                       # 10 -> 5 -> 2
-    assert found == {"visible": 7, "hidden": 0}
+def person(qid, sitelinks, lat, lng, year=1800):
+    return {"qid": qid, "name": qid, "sitelinks": sitelinks, "lat": lat, "lng": lng,
+            "birth": {"time": f"+{year:04d}-01-01T00:00:00Z", "precision": 9}}
 
 
-def test_an_edition_that_fails_even_at_one_year_reports_rather_than_loops(monkeypatch):
-    monkeypatch.setattr(probe_floor.extract, "run_query",
-                        lambda *a, **k: (_ for _ in ()).throw(RuntimeError("504")))
-    found, years, error = probe_floor.probe_edition("en", 1800, 10, "c")
-    assert found is None and years == probe_floor.MIN_SPAN and error is not None
+ROME, XIAN = (41.9, 12.5), (34.3, 108.9)
 
 
-def test_the_count_does_not_pay_for_a_redundant_distinct():
-    """An item has at most one article per edition, so DISTINCT bought a
-    guarantee the data already gives — on the queries that were too slow."""
-    assert "COUNT(*)" in probe_floor.QUERY
-    assert "DISTINCT" not in probe_floor.QUERY
+def test_the_floor_splits_each_region_in_two():
+    east_asia = next(r.id for r in regions.REGIONS if r.name == "East Asia")
+    counts = probe_floor.tally([person("Q1", 1, *XIAN), person("Q2", 2, *XIAN),
+                                person("Q3", 40, *XIAN)])
+    assert counts[east_asia] == (2, 1)
 
 
-def test_both_buckets_are_read_back():
-    payload = {"results": {"bindings": [
-        {"bucket": {"value": "visible"}, "n": {"value": "1108"}},
-        {"bucket": {"value": "hidden"}, "n": {"value": "3102"}}]}}
-    assert probe_floor.counts(payload) == {"visible": 1108, "hidden": 3102}
+def test_an_item_exactly_at_the_floor_counts_as_visible():
+    """Off by one here would put the whole comparison one sitelink out."""
+    southern_europe = next(r.id for r in regions.REGIONS if r.name == "Southern Europe")
+    counts = probe_floor.tally([person("Q1", probe_floor.FLOOR, *ROME)])
+    assert counts[southern_europe] == (0, 1)
 
 
-def test_a_missing_bucket_is_zero_not_absent():
-    """An edition where every biography clears the floor returns one row, and
-    the share calculation still has to work."""
-    payload = {"results": {"bindings": [
-        {"bucket": {"value": "visible"}, "n": {"value": "40"}}]}}
-    assert probe_floor.counts(payload) == {"visible": 40, "hidden": 0}
+def test_a_qid_seen_twice_is_counted_once_at_its_best():
+    counts = probe_floor.tally([person("Q1", 1, *ROME), person("Q1", 40, *ROME)])
+    assert sum(h + v for h, v in counts.values()) == 1
+    assert sum(v for _, v in counts.values()) == 1
+
+
+def test_an_unplaceable_person_is_not_counted():
+    """No coordinate, no region — the same rule the pipeline uses, so the
+    probe describes the population the app would actually have."""
+    no_coordinates = {"qid": "Q1", "name": "x", "sitelinks": 1,
+                      "birth": {"time": "+1800-01-01T00:00:00Z", "precision": 9}}
+    assert probe_floor.tally([no_coordinates]) == {}
+
+
+def test_regions_are_counted_separately():
+    counts = probe_floor.tally([person("Q1", 1, *XIAN), person("Q2", 1, *ROME)])
+    assert len(counts) == 2
+    assert all(c == (1, 0) for c in counts.values())

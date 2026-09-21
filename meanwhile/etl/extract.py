@@ -246,14 +246,11 @@ def split_window(low, high):
     return (low, middle), (middle, high)
 
 
-def main_query(type_, driver, low, high, min_sitelinks=None):
-    """The extraction query. `min_sitelinks` overrides the floor, which
-    probe_floor.py uses to look at what the floor is keeping out."""
-    floor = MIN_SITELINKS[type_] if min_sitelinks is None else min_sitelinks
+def main_query(type_, driver, low, high):
     return (TEMPLATES[type_]
             .replace("%DRIVER%", driver)
             .replace("%DATEFILTER%", date_filter(low, high))
-            .replace("%MIN%", str(floor))
+            .replace("%MIN%", str(MIN_SITELINKS[type_]))
             .replace("%LABEL%", LABEL_SERVICE))
 
 

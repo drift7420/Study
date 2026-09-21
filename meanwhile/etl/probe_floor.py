@@ -24,9 +24,13 @@ window while English timed out on a single year. Narrowing the window could
 not help, and asking per region rather than per edition is the better question
 anyway — regions are what the app shows.
 
-This uses the extraction query itself, which is the one shape WDQS reliably
-answers, so it should cost about what one chunk of a real run costs, plus a
-coordinate pass over a few thousand items.
+The join structure here is the extraction query's, which is the one shape
+WDQS reliably answers: lead with the date, then narrow by type and sitelinks.
+The payload is not. The extraction query also asks for labels, descriptions,
+an article link and three optional date properties, because the app needs
+them — and at a floor of 1 it returns several times as many rows to carry all
+that on. That combination still came back 504. This asks for the QID and the
+sitelink count and nothing else.
 
 Usage:
     python probe_floor.py --contact you@example.com
@@ -40,13 +44,23 @@ from pathlib import Path
 
 import extract
 import regions as regions_mod
-import transform as tf
 
 FLOOR = extract.MIN_SITELINKS["person"]
 
-# Thresholds off: we want everything that can be placed, and will apply the
-# floor here so both sides of it are visible.
-KEEP_ALL = {tf.PERSON: 0, tf.POLITY: 0, tf.EVENT: 0}
+# Two columns. The floor question needs a QID to place and a count to compare
+# against the floor; everything else the extraction query returns is for the
+# app, and at a floor of 1 there are several times as many rows to carry it on.
+QUERY = """
+SELECT ?item ?sitelinks WHERE {
+  ?item wdt:P569 ?driver .
+  %DATEFILTER%
+  ?item wdt:P31 wd:Q5 ; wikibase:sitelinks ?sitelinks .
+}
+"""
+
+
+def query_for(low, high):
+    return QUERY.replace("%DATEFILTER%", extract.date_filter(low, high))
 
 
 def fetch_window(low, high, contact, cache_dir):
@@ -58,9 +72,11 @@ def fetch_window(low, high, contact, cache_dir):
         return json.loads(cached.read_text(encoding="utf-8"))
 
     print(f"  {low}-{high}: querying every birth with 1+ sitelinks…")
-    payload = extract.run_query(
-        extract.main_query("person", "P569", low, high, min_sitelinks=1), contact)
-    records = [extract.flatten(b, "person") for b in payload["results"]["bindings"]]
+    payload = extract.run_query(query_for(low, high), contact)
+    records = [{"qid": extract.cell(b, "item").rsplit("/", 1)[-1],
+                "sitelinks": int(extract.cell(b, "sitelinks") or 0),
+                "lat": None, "lng": None, "location_source": None}
+               for b in payload["results"]["bindings"]]
     cached.write_text(json.dumps(records), encoding="utf-8")
     print(f"  {low}-{high}: {len(records)} people")
     return records
@@ -77,12 +93,20 @@ def place(records, contact, cache_dir):
 
 
 def tally(records):
-    """{region_id: (below the floor, at or above it)}."""
+    """{region_id: (below the floor, at or above it)}.
+
+    Placed by the pipeline's own rule — a coordinate or nothing — so this
+    describes the population the app would actually have, not every row
+    Wikidata returned.
+    """
     best = {}
     for record in records:
-        row = tf.build_row(record, tf.PERSON, KEEP_ALL)
-        if row and row.notability > best.get(row.qid, (None, -1))[1]:
-            best[row.qid] = (row.region_id, row.notability)
+        region_id, _ = regions_mod.assign(record.get("lat"), record.get("lng"))
+        if region_id is None:
+            continue
+        notability = int(record.get("sitelinks") or 0)
+        if notability > best.get(record["qid"], (None, -1))[1]:
+            best[record["qid"]] = (region_id, notability)
 
     counts = {}
     for region_id, notability in best.values():
@@ -117,8 +141,8 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--from", dest="start", type=int, default=1800,
                         help="First year of the window to sample (default 1800).")
-    parser.add_argument("--span", type=int, default=2,
-                        help="Years to sample (default 2). The query cost scales "
+    parser.add_argument("--span", type=int, default=1,
+                        help="Years to sample (default 1). The query cost scales "
                              "with this, and a wide window is what WDQS refuses.")
     parser.add_argument("--cache", default="raw/floor-cache")
     parser.add_argument("--contact", default=os.environ.get("MEANWHILE_CONTACT"),

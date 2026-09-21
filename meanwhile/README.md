@@ -153,6 +153,12 @@ window — the obvious fix, and the one tried first — could not have worked.
 Asking per region is both cheaper and the better question, since regions are
 what the app shows.
 
+Its second version borrowed the extraction query whole, and that was still too
+much: the extraction query carries labels, descriptions, an article link and
+three optional dates because the app needs them, and at a floor of 1 there are
+several times as many rows to carry all of it on. The join order was what was
+worth borrowing. The query now selects two columns.
+
 **Region boxes are ordered.** First match wins, so the list runs specific to
 general: East Asia before Southeast Asia or Guangzhou lands in the wrong one;
 Egypt's box stops at 34°E so it doesn't reach across Sinai and claim Jerusalem;

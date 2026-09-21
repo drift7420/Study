@@ -23,27 +23,36 @@ def test_the_floor_is_read_from_extract_not_repeated():
 
 
 def test_the_probe_asks_below_the_floor():
-    """The whole point is seeing what a real run never fetches."""
-    query = extract.main_query("person", "P569", 1800, 1802, min_sitelinks=1)
-    assert "FILTER(?sitelinks >= 1)" in query
+    """The whole point is seeing what a real run never fetches, so there is
+    no sitelink filter at all."""
+    assert "?sitelinks >=" not in probe_floor.query_for(1800, 1801)
 
 
 def test_the_real_extraction_floor_is_untouched():
+    """The probe looks below the floor; it must not move it."""
     query = extract.main_query("person", "P569", 1800, 1802)
     assert f"FILTER(?sitelinks >= {extract.MIN_SITELINKS['person']})" in query
 
 
-def test_it_reuses_the_query_shape_that_works():
-    """Asking per Wikipedia edition cost what the edition cost, not what the
-    window cost: Swahili answered ten years while English timed out on one."""
-    query = extract.main_query("person", "P569", 1800, 1802, min_sitelinks=1)
-    assert "schema:isPartOf" not in query.replace(
-        "?article schema:about ?item ; schema:isPartOf <https://en.wikipedia.org/>", "")
+def test_it_keeps_the_join_order_that_works():
+    """Leading with the type scans every human in Wikidata before anything
+    narrows it — the same rule every extraction query follows."""
+    query = probe_floor.query_for(1800, 1801)
+    assert query.index("FILTER(?driver") < query.index("wd:Q5")
+    assert "YEAR(" not in query
 
 
-def person(qid, sitelinks, lat, lng, year=1800):
-    return {"qid": qid, "name": qid, "sitelinks": sitelinks, "lat": lat, "lng": lng,
-            "birth": {"time": f"+{year:04d}-01-01T00:00:00Z", "precision": 9}}
+def test_it_asks_for_nothing_it_does_not_need():
+    """At a floor of 1 there are several times as many rows to carry the
+    payload on, and the version that asked for labels and optional dates
+    came back 504."""
+    query = probe_floor.query_for(1800, 1801)
+    for extra in ("SERVICE", "OPTIONAL", "schema:isPartOf", "rdfs:label"):
+        assert extra not in query, f"the probe is still asking for {extra}"
+
+
+def person(qid, sitelinks, lat, lng):
+    return {"qid": qid, "sitelinks": sitelinks, "lat": lat, "lng": lng}
 
 
 ROME, XIAN = (41.9, 12.5), (34.3, 108.9)
@@ -72,9 +81,8 @@ def test_a_qid_seen_twice_is_counted_once_at_its_best():
 def test_an_unplaceable_person_is_not_counted():
     """No coordinate, no region — the same rule the pipeline uses, so the
     probe describes the population the app would actually have."""
-    no_coordinates = {"qid": "Q1", "name": "x", "sitelinks": 1,
-                      "birth": {"time": "+1800-01-01T00:00:00Z", "precision": 9}}
-    assert probe_floor.tally([no_coordinates]) == {}
+    assert probe_floor.tally([{"qid": "Q1", "sitelinks": 1,
+                               "lat": None, "lng": None}]) == {}
 
 
 def test_regions_are_counted_separately():

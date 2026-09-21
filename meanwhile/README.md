@@ -34,14 +34,24 @@ python extract.py --type event  --out raw/event.json  --contact you@example.com
 # 2 + 3. normalise, build the database, print the coverage report
 python build_db.py --raw raw --out dist/meanwhile.db
 
-# 4. put the real slice into a copy of the prototype and open it
-python build_prototype.py
+# 4. put real rows into a copy of the prototype and open it
+python build_prototype.py                                    # spread
+python build_prototype.py --from-db --out dist/dense.html    # density
 ```
 
 `build_db.py` also writes `dist/mockup_data.json`, a slice sampled per region
 per era; `build_prototype.py` inlines it into `dist/prototype.html`, which
 opens from the filesystem with no server. `prototype.html` itself still runs on
 its hand-written sample, so it stays viewable without a build.
+
+**The two builds answer different questions, and the default cannot answer
+both.** The slice caps every region at twelve entries per 250 years, which is
+what stops the nineteenth century crowding out the Bronze Age — so it shows
+whether the world's *spread* survives the design, and nothing about density,
+because flattening crowded cells is exactly what it does. `--from-db` samples
+from the database at a much higher cap, so a crowded cell arrives crowded:
+that is the build that shows what Western Europe in 1850 does to a bottom
+sheet when it is tens of thousands of entries rather than twelve.
 
 ## Stages
 
@@ -54,10 +64,10 @@ its hand-written sample, so it stays viewable without a build.
 | `build_db.py` | SQLite + FTS5 + indexes, coverage report, prototype JSON | Yes |
 | `thresholds.py` | What each notability cutoff would admit, per region | Yes |
 | `probe_floor.py` | What the sitelink floor hides, by region — **unanswered** | Yes |
-| `build_prototype.py` | Inlines the real slice into a copy of the prototype | Yes |
+| `build_prototype.py` | Inlines real rows into a copy of the prototype | Yes |
 
 ```bash
-python -m pytest tests/ -q      # 132 tests
+python -m pytest tests/ -q      # 137 tests
 ```
 
 ### extract.py is the stage the network shapes

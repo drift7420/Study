@@ -138,24 +138,42 @@ def report(rows):
         print(region.name.ljust(22) + cells)
 
 
-def write_mockup_json(rows, path, per_cell=12, era=250):
-    """A trimmed slice the HTML prototype can eat, so the design can be tested
-    against real data before any app code exists.
+# What the prototype eats: [name, type, start, end, region_id, notability,
+# description, wiki_title]. build_prototype.py reads the same shape out of the
+# database, so the two stay in step.
+def as_list(row):
+    return [row.name, row.type, row.active_start, row.active_end,
+            row.region_id, row.notability, row.description, row.wiki_title]
 
-    Sampled per region *per era*, not per region: the dataset is so weighted
-    towards recent Europe that a flat per-region cap would hand the prototype
-    the nineteenth century and nothing before it, which is the one thing the
-    prototype is meant to test.
+
+def sample(rows, per_cell=12, era=250):
+    """Most notable first, capped per region *per era*.
+
+    Per era, not per region: the dataset is so weighted towards recent Europe
+    that a flat per-region cap would hand the prototype the nineteenth century
+    and nothing before it, which is the one thing it is meant to test.
+
+    The cap is also what this sample cannot show. A page built at twelve per
+    cell answers whether the design handles the world's *spread*; it says
+    nothing about what a region looks like at its real density, because every
+    crowded cell has been flattened to the same twelve. build_prototype.py
+    --from-db raises the cap for that question.
     """
     kept, counts = [], {}
-    for row in sorted(rows, key=lambda r: -r.notability):
-        for bucket in range(row.active_start // era, row.active_end // era + 1):
-            key = (row.region_id, bucket)
+    for row in sorted(rows, key=lambda r: -r[5]):
+        for bucket in range(row[2] // era, row[3] // era + 1):
+            key = (row[4], bucket)
             if counts.get(key, 0) < per_cell:
                 counts[key] = counts.get(key, 0) + 1
-                kept.append([row.name, row.type, row.active_start, row.active_end,
-                             row.region_id, row.notability, row.description, row.wiki_title])
+                kept.append(row)
                 break
+    return kept
+
+
+def write_mockup_json(rows, path, per_cell=12, era=250):
+    """A trimmed slice the HTML prototype can eat, so the design can be tested
+    against real data before any app code exists."""
+    kept = sample([as_list(r) for r in rows], per_cell, era)
     path.write_text(json.dumps(kept, ensure_ascii=False), encoding="utf-8")
     print(f"\n{len(kept)} entries -> {path} (for the HTML prototype)")
 
